@@ -1,0 +1,26 @@
+syntax = "proto2";
+
+package fast_semantic_segmentation.protos;
+
+message EvalConfig {
+    optional uint32 num_examples = 1 [default=5000];
+    optional uint32 ignore_label = 2 [default=255];
+    optional EvalInputType eval_input_type = 3;
+}
+
+message EvalInputType {
+  oneof eval_input_type_oneof {
+    CroppedEvalInput cropped_eval_input = 1;
+    PaddedEvalInput padded_eval_input = 2;
+  }
+}
+
+message CroppedEvalInput {
+  optional int32 height = 1;
+  optional int32 width = 2;
+}
+
+message PaddedEvalInput {
+  optional int32 height = 1;
+  optional int32 width = 2;
+}

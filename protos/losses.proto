@@ -1,0 +1,39 @@
+syntax = "proto2";
+
+package fast_semantic_segmentation.protos;
+
+message Loss {
+
+    optional ClassificationLoss classification_loss = 1;
+
+    optional VectorFieldLoss vector_field_loss = 2;
+
+    optional bool use_auxiliary_loss = 3 [default=false];
+
+    optional uint32 ignore_label = 4 [default=255];
+
+    optional bool use_vec_loss = 5 [default=true];
+}
+
+message ClassificationLoss {
+    oneof loss_type {
+        SoftmaxClassificationLoss softmax = 1;
+        FocalClassificationLoss focal = 2;
+    }
+}
+
+message VectorFieldLoss {
+    oneof loss_type {
+        L2Norm l2norm = 1;
+        L2NormSmooth l2normsmooth = 2;
+    }
+}
+
+message L2Norm {}
+message L2NormSmooth {}
+
+message SoftmaxClassificationLoss {}
+
+message FocalClassificationLoss {}
+
+
