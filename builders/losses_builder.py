@@ -58,12 +58,28 @@ def _l2norm(predictions, labels, ignore_label):
 
 def _l2norm_mag(predictions, labels, ignore_label):
     sq_dif = tf.squared_difference(labels, predictions)
+    
+    eps = 0.1
+    mag = tf.sqrt(tf.squared_difference(labels[:,:,:,0], labels[:,:,:,1]))
+    mag = tf.expand_dims(mag, -1)
+    weight = tf.cast(1/(mag + eps), dtype=tf.float32) #10 -> 0
 
-
+    loss = 0.5 * tf.reduce_mean(sq_dif * weight)
+    
+    return loss
 
 def _l2norm_smooth(predictions, labels, ignore_label):
-    l2norm_term = _l2norm(predictions, labels, ignore_label)
-    raise NotImplementedError("l2 norm smooth is not implemented")
+    diff = 0.5 * tf.reduce_mean(tf.squared_difference(labels, predictions))
+
+    
+    hor = tf.squared_difference(predictions[:, 1:, :, :], predictions[:, :-1, :, :])
+    vert = tf.squared_difference(predictions[:, :, 1:, :], predictions[:, :, :-1, :])
+    diag = tf.squared_difference(predictions[:, 1:, 1:, :], predictions[:, :-1, :-1, :])
+    ant_diag = tf.squared_difference(predictions[:, 1:, -1:, :], predictions[:, :-1, 1:, :])
+
+    smooth = 0.5 * tf.add_n([tf.reduce_mean(v) for v in [hor, vert, diag, anti_diag]])
+
+    raise diff + (0.01 * smooth)
 
 def build(loss_config):
     if not isinstance(loss_config, losses_pb2.Loss):

@@ -26,10 +26,12 @@ message VectorFieldLoss {
     oneof loss_type {
         L2Norm l2norm = 1;
         L2NormSmooth l2normsmooth = 2;
+        L2NormMag l2normmag = 3;
     }
 }
 
 message L2Norm {}
+message L2NormMag {}
 message L2NormSmooth {}
 
 message SoftmaxClassificationLoss {}
