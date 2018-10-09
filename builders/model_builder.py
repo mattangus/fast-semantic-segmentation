@@ -96,6 +96,7 @@ def _build_pspnet_icnet_model(model_config, is_training, add_summaries,
             common_kwargs['main_loss_weight'] = 1.0
             common_kwargs['aux_loss_weight'] = 0.4
             common_kwargs['vec_loss_weight'] = 0.001
+        common_kwargs['train_reduce'] = model_config.train_reduce
         model = (num_classes, pspnet_architecture.PSPNetArchitecture(
             filter_scale=filter_scale,
             **common_kwargs))

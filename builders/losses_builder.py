@@ -75,11 +75,11 @@ def _l2norm_smooth(predictions, labels, ignore_label):
     hor = tf.squared_difference(predictions[:, 1:, :, :], predictions[:, :-1, :, :])
     vert = tf.squared_difference(predictions[:, :, 1:, :], predictions[:, :, :-1, :])
     diag = tf.squared_difference(predictions[:, 1:, 1:, :], predictions[:, :-1, :-1, :])
-    ant_diag = tf.squared_difference(predictions[:, 1:, -1:, :], predictions[:, :-1, 1:, :])
+    anti_diag = tf.squared_difference(predictions[:, 1:, -1:, :], predictions[:, :-1, 1:, :])
 
     smooth = 0.5 * tf.add_n([tf.reduce_mean(v) for v in [hor, vert, diag, anti_diag]])
 
-    raise diff + (0.01 * smooth)
+    return diff + (0.01 * smooth)
 
 def build(loss_config):
     if not isinstance(loss_config, losses_pb2.Loss):

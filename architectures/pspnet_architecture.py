@@ -39,7 +39,8 @@ class PSPNetArchitecture(model.FastSegmentationModel):
                 vec_loss_weight=0.01,
                 add_summaries=True,
                 scope=None,
-                scale_pred=False):
+                scale_pred=False,
+                train_reduce=False):
         super(PSPNetArchitecture, self).__init__(num_classes=num_classes)
         self._is_training = is_training
         self._model_arg_scope = model_arg_scope
@@ -55,11 +56,16 @@ class PSPNetArchitecture(model.FastSegmentationModel):
         self._vec_loss_weight = vec_loss_weight
         self._add_summaries = add_summaries
         self._scale_pred = scale_pred
+        self._train_reduce = train_reduce
 
     @property
     def main_class_predictions_key(self):
         return 'class_predictions'
     
+    @property
+    def final_logits_key(self):
+        return 'final_logits'
+
     @property
     def vec_predictions_key(self):
         return 'vec_predictions'
@@ -99,16 +105,23 @@ class PSPNetArchitecture(model.FastSegmentationModel):
                  scope=self.shared_feature_extractor_scope)
             # Branch specific layers
             final_logits = self._pspnet_pspmodule(backbone_logits)
+            
             # Class class_predictions
             with tf.variable_scope('Predictions'):
-                predictions = slim.conv2d(final_logits, self._num_classes,
-                        1, 1, activation_fn=None, normalizer_fn=None)
-                if not self._is_training: # evaluation
-                    predictions = self._dynamic_interpolation(
-                            predictions, z_factor=8.0)
+                # TODO: remove hack to not load predictions
+                load_scope = ""
+                if self._train_reduce:
+                    load_scope = "dim_reduce"
+                with tf.variable_scope(load_scope):
+                    predictions = slim.conv2d(final_logits, self._num_classes,
+                            1, 1, activation_fn=None, normalizer_fn=None)
+                    if not self._is_training: # evaluation
+                        predictions = self._dynamic_interpolation(
+                                predictions, z_factor=8.0)
             # Outputs with auxilarary loss for training
             prediction_dict = {
-                self.main_class_predictions_key: predictions }
+                self.main_class_predictions_key: predictions,
+                self.final_logits_key: final_logits }
             # Aux loss as described in PSPNet paper
             if self._is_training and self._use_aux_loss:
                 with tf.variable_scope('AuxPredictions'):
@@ -167,9 +180,18 @@ class PSPNetArchitecture(model.FastSegmentationModel):
             branch_merge = tf.concat([input_features, full_pool,
                                      half_pool, third_pool, forth_pool],
                                      axis=-1)
+            if self._train_reduce:
+                branch_merge = tf.stop_gradient(branch_merge)
             output = slim.conv2d(branch_merge,
                     512//self._filter_scale, (3, 3),
                     stride=1, normalizer_fn=slim.batch_norm)
+            
+            if self._train_reduce:
+                #dimensionality reduction
+                with tf.variable_scope("dim_reduce"):
+                    output = slim.conv2d(output,
+                            128, (3, 3),
+                            stride=1, normalizer_fn=slim.batch_norm)
             return output
 
     def _dynamic_interpolation(self, features_to_upsample,
@@ -266,7 +288,7 @@ class PSPNetArchitecture(model.FastSegmentationModel):
         exclude_list = ['global_step']
         variables_to_restore = slim.get_variables_to_restore(
                                         exclude=exclude_list)
-        variables_to_restore.append(slim.get_or_create_global_step())
+                                        
         return variables_to_restore
 
 

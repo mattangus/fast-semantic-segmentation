@@ -5,6 +5,7 @@ from __future__ import print_function
 
 import functools
 import tensorflow as tf
+import os
 
 from google.protobuf import text_format
 
@@ -75,6 +76,8 @@ flags.DEFINE_boolean("log_memory", False, "")
 def main(_):
     tf.gfile.MakeDirs(FLAGS.logdir)
     pipeline_config = pipeline_pb2.PipelineConfig()
+    if not os.path.exists(FLAGS.config_path):
+        raise FileNotFoundError(FLAGS.config_path)
     with tf.gfile.GFile(FLAGS.config_path, "r") as f:
         proto_str = f.read()
         text_format.Merge(proto_str, pipeline_config)
@@ -98,6 +101,7 @@ def main(_):
         create_model_fn,
         create_input_fn,
         train_config,
+        model_config,
         master=FLAGS.master,
         task=FLAGS.task,
         is_chief=is_chief,

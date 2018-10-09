@@ -38,13 +38,12 @@ def _get_outputs_from_inputs(model, input_tensors,
     preprocessed_inputs = model.preprocess(inputs)
     outputs_dict = model.predict(preprocessed_inputs)
     output_tensors = outputs_dict[model.main_class_predictions_key]
-    output_vec = outputs_dict[model.vec_predictions_key]
     prediction_tensor = tf.argmax(output_tensors, 3)
     prediction_tensor = tf.expand_dims(prediction_tensor, -1)
     # name tensor to make inference with frozen weights easier
-    final_op = tf.identity(prediction_tensor,
+    outputs_dict[model.main_class_predictions_key] = tf.identity(prediction_tensor,
         name=output_collection_name)
-    return final_op, output_vec
+    return outputs_dict
 
 
 def _image_tensor_input_placeholder(input_shape=None, pad_to_shape=None):
@@ -66,16 +65,22 @@ def deploy_segmentation_inference_graph(model, input_shape,
                                         output_collection_name="predictions"):
     (placeholder_tensor,
       input_tensor) = _image_tensor_input_placeholder(input_shape, pad_to_shape)
-    outputs, vecs = _get_outputs_from_inputs(model, input_tensor,
+    outputs = _get_outputs_from_inputs(model, input_tensor,
             output_collection_name=output_collection_name)
-
+    predictions = outputs[model.main_class_predictions_key]
     if label_color_map is not None:
-        output_shape = outputs.get_shape().as_list()
-        outputs = _map_to_colored_labels(outputs, output_shape, label_color_map)
+        output_shape = predictions.get_shape().as_list()
+        predictions = _map_to_colored_labels(predictions, output_shape, label_color_map)
 
     if pad_to_shape is not None:
-        outputs = tf.image.crop_to_bounding_box(
-            outputs, 0, 0, input_shape[0], input_shape[1])
+        predictions = tf.image.crop_to_bounding_box(
+            predictions, 0, 0, input_shape[0], input_shape[1])
+    # if model.final_logits_key in outputs:
+    #     logits = outputs[model.final_logits_key]
+    #     logits = tf.image.crop_to_bounding_box(
+    #         logits, 0, 0, input_shape[0], input_shape[1])
+    #     outputs[model.final_logits_key] = logits
 
     tf.train.get_or_create_global_step()
-    return outputs, vecs, placeholder_tensor
+    outputs[model.main_class_predictions_key] = predictions
+    return outputs, placeholder_tensor

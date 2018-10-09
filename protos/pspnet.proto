@@ -12,6 +12,7 @@ message PSPNet {
     // The filter compression factor when applying filter/channel pruning
     optional float filter_scale = 5;
     optional bool scale_predictions = 6;
+    optional bool train_reduce = 7;
 }
 
 message PSPNetICNetFeatureExtractor {

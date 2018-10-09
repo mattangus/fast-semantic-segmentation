@@ -102,6 +102,7 @@ def create_training_model_losses(input_queue, create_model_fn, train_config,
 def train_segmentation_model(create_model_fn,
                              create_input_fn,
                              train_config,
+                             model_config,
                              master,
                              task,
                              is_chief,
@@ -234,6 +235,10 @@ def train_segmentation_model(create_model_fn,
         with tf.device(deploy_config.optimizer_device()):
             reg_losses = (None if train_config.add_regularization_loss
                                else [])
+            if model_config.pspnet.train_reduce and reg_losses is None:
+                regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+                reg_losses = [r for r in regularization_losses if "dim_reduce" in r.name]
+            
             total_loss, grads_and_vars = model_deploy.optimize_clones(
                 clones, training_optimizer,
                 regularization_losses=reg_losses,
@@ -283,6 +288,8 @@ def train_segmentation_model(create_model_fn,
 
         session_config = tf.ConfigProto(
             allow_soft_placement=True, log_device_placement=True)
+
+        #load_vars = [v for v in tf.global_variables() if "Dont_Load" not in v.op.name]
 
         # Save checkpoints regularly.
         saver = tf.train.Saver(max_to_keep=max_checkpoints_to_keep)

@@ -147,6 +147,7 @@ def main(_):
         create_model_fn,
         create_input_fn,
         train_config,
+        model_config,
         master=FLAGS.master,
         task=FLAGS.task,
         is_chief=is_chief,
