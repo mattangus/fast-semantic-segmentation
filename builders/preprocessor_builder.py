@@ -319,9 +319,9 @@ def preprocess_runner(tensor_dict, func_list, skip_labels=False, preprocess_vars
     if not skip_labels:
         labels = tf.to_float(tensor_dict[dataset_builder._LABEL_FIELD])
         labels_shape = tf.shape(labels)
-        shape_assert = tf.Assert(
-            tf.equal(images_shape, labels_shape),
-            ["Label and Image shape must match"])
+        #shape_assert = tf.Assert(
+        #    tf.equal(images_shape, labels_shape),
+        #    ["Label and Image shape must match"])
     
     vecs = tf.to_float(tensor_dict[dataset_builder._VEC_FIELD])
 

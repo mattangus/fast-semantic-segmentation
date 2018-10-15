@@ -233,7 +233,7 @@ def eval_segmentation_model(create_model_fn,
                             num_evals=total_eval_examples,
                             eval_op=eval_op,
                             final_op=value_op,
-                            #summary_op=summary_op,
+                            summary_op=summary_op,
                             timeout=0,
                             variables_to_restore=variables_to_restore)
         
