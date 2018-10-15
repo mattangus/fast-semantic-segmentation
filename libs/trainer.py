@@ -14,6 +14,9 @@ from builders import dataset_builder
 from builders import preprocessor_builder
 from builders import optimizer_builder
 
+import queue
+
+from tensorflow.contrib import graph_editor as ge
 
 slim = tf.contrib.slim
 
@@ -97,6 +100,38 @@ def create_training_model_losses(input_queue, create_model_fn, train_config,
     losses_dict = segmentation_model.loss(prediction_dict)
     for loss_tensor in losses_dict.values():
         tf.losses.add_loss(loss_tensor)
+
+def do_back(op):
+    result = list(seed_ops)
+    wave = set(seed_ops)
+    while wave:
+        new_wave = set()
+        for op in wave:
+            for new_t in op.inputs:
+                if new_t in stop_at_ts:
+                    continue
+                if new_t.op not in result and is_within(new_t.op):
+                    new_wave.add(new_t.op)
+        util.concatenate_unique(result, new_wave)
+        wave = new_wave
+    
+    # q = queue.Queue()
+    # q.put(ge.sgv(op))
+
+    # import pdb; pdb.set_trace()
+    # res = []
+
+    # while not q.empty():
+    #     cur = q.get_nowait()
+        
+    #     ins = list(cur.inputs)
+
+    #     for it in ins:
+    #         q.put_nowait(ge.sgv(it))
+    #         res.append(it)
+    
+    import pdb; pdb.set_trace()
+    print("done")
 
 
 def train_segmentation_model(create_model_fn,

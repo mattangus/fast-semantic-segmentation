@@ -109,19 +109,20 @@ class PSPNetArchitecture(model.FastSegmentationModel):
             # Class class_predictions
             with tf.variable_scope('Predictions'):
                 # TODO: remove hack to not load predictions
-                load_scope = ""
-                if self._train_reduce:
-                    load_scope = "dim_reduce"
-                with tf.variable_scope(load_scope):
-                    predictions = slim.conv2d(final_logits, self._num_classes,
-                            1, 1, activation_fn=None, normalizer_fn=None)
-                    if not self._is_training: # evaluation
-                        predictions = self._dynamic_interpolation(
-                                predictions, z_factor=8.0)
+                # load_scope = ""
+                # if self._train_reduce:
+                #     load_scope = "dim_reduce"
+                # with tf.variable_scope(load_scope):
+                predictions = slim.conv2d(final_logits, self._num_classes,
+                        1, 1, activation_fn=None, normalizer_fn=None)
+                predictions_no_resize = predictions
+                if not self._is_training: # evaluation
+                    predictions = self._dynamic_interpolation(
+                            predictions, z_factor=8.0)
             # Outputs with auxilarary loss for training
             prediction_dict = {
                 self.main_class_predictions_key: predictions,
-                self.final_logits_key: final_logits }
+                self.final_logits_key: predictions_no_resize }
             # Aux loss as described in PSPNet paper
             if self._is_training and self._use_aux_loss:
                 with tf.variable_scope('AuxPredictions'):
@@ -190,7 +191,7 @@ class PSPNetArchitecture(model.FastSegmentationModel):
                 #dimensionality reduction
                 with tf.variable_scope("dim_reduce"):
                     output = slim.conv2d(output,
-                            128, (3, 3),
+                            32, (3, 3),
                             stride=1, normalizer_fn=slim.batch_norm)
             return output
 

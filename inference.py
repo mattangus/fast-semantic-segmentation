@@ -12,6 +12,7 @@ from google.protobuf import text_format
 import glob
 import matplotlib.pyplot as plt
 import cv2
+import torch
 
 from protos import pipeline_pb2
 from builders import model_builder
@@ -109,98 +110,61 @@ def _get_images_from_path(input_path):
 #         update_mk = tf.assign_add(mk, temp/k)
 #         update_vk = tf.assign_add(vk, temp*(xk - mk))
 #     return mk, vk, [update_mkm1, update_mk, update_vk]
+def b_inv(b_mat):
+    eye = b_mat.new_ones(b_mat.size(-1)).diag().expand_as(b_mat)
+    b_inv, _ = torch.gesv(eye, b_mat)
+    return b_inv
 
-def compute_stats(m_km1, v_km1, x_k, k):
-    import torch
-    #numpy version might be better as tf order of updates matters
-    #not sure how to control that
-    dim = x_k.shape[-1]
-    out_shape = list(x_k.shape) + [dim]
-    if m_km1 is None or v_km1 is None:
-        return torch.tensor(x_k), torch.zeros(out_shape)
+def compute_mean(m_km1, x_k, k):
+    if m_km1 is None:
+        return torch.tensor(x_k)
     x_k = torch.tensor(x_k)
-    
-
     temp = (x_k - m_km1)
     m_k = m_km1 + temp/k
-    temp2 = torch.bmm(temp.view(-1, dim).unsqueeze(2), (x_k - m_k).view(-1, dim).unsqueeze(1)).view(out_shape)
-    v_k = v_km1 + temp2 #temp*(x_k - m_k)
-    return m_k, v_k
+    return m_k
+
+def compute_cov_inv(m, v_km1_inv, x_k, k):
+    dim = x_k.shape[-1]
+    out_shape = list(x_k.shape[:-1]) + [dim, x_k.shape[-1]]
+    if v_km1_inv is None:
+        return torch.zeros(out_shape)
+    x_k = torch.tensor(x_k)
+
+    temp = (x_k - m)
+    sigma = torch.bmm(temp.view(-1, dim).unsqueeze(2), temp.view(-1, dim).unsqueeze(1)).view(out_shape)
+    #import pdb; pdb.set_trace()
+    v_k_inv = b_inv(sigma) + v_km1_inv
+    return v_k_inv
+
+def compute_stats(m_km1, v_km1_inv, x_k, k, first_pass):
+    #numpy version might be better as tf order of updates matters
+    #not sure how to control that
+    # dim = x_k.shape[-1]
+    # out_shape = list(x_k.shape) + [dim]
+    # if m_km1 is None or v_km1 is None:
+    #     return torch.tensor(x_k), torch.zeros(out_shape)
+    # x_k = torch.tensor(x_k)
+    
+    # temp = (x_k - m_km1)
+    # m_k = m_km1 + temp/k
+    # temp2 = torch.bmm(temp.view(-1, dim).unsqueeze(2), (x_k - m_k).view(-1, dim).unsqueeze(1)).view(out_shape)
+    # v_k = v_km1 + temp2 #temp*(x_k - m_k)
+    # return m_k, v_k
+    if first_pass:
+        m_k = compute_mean(m_km1, x_k, k)
+        v_k_inv = v_km1_inv
+    else:
+        m_k = m_km1
+        v_k_inv = compute_cov_inv(m_k, v_km1_inv, x_k, k)
+    return m_k, v_k_inv
 
 def process_annot(pred_shape, feat, num_classes):
     annot_place = tf.placeholder(tf.uint8, pred_shape[:-1], "annot_in")
     one_hot = tf.one_hot(annot_place, num_classes)
-    resized = tf.expand_dims(tf.image.resize_bilinear(one_hot, feat.get_shape().as_list()[1:-1]), 3)
-    sorted_feats = tf.expand_dims(feat, -1)*resized
+    resized = tf.expand_dims(tf.image.resize_nearest_neighbor(one_hot, feat.get_shape().as_list()[1:-1]), -1)
+    sorted_feats = tf.expand_dims(feat, -2)*resized
+    #import pdb; pdb.set_trace()
     return annot_place, sorted_feats
-
-def get_backward_walk_ops(seed_ops,
-                          inclusive=True,
-                          within_ops=None,
-                          within_ops_fn=None,
-                          stop_at_ts=(),
-                          control_inputs=False):
-    """Do a backward graph walk and return all the visited ops.
-    Args:
-    seed_ops: an iterable of operations from which the backward graph
-        walk starts. If a list of tensors is given instead, the seed_ops are set
-        to be the generators of those tensors.
-    inclusive: if True the given seed_ops are also part of the resulting set.
-    within_ops: an iterable of `tf.Operation` within which the search is
-        restricted. If `within_ops` is `None`, the search is performed within
-        the whole graph.
-    within_ops_fn: if provided, a function on ops that should return True iff
-        the op is within the graph traversal. This can be used along within_ops,
-        in which case an op is within if it is also in within_ops.
-    stop_at_ts: an iterable of tensors at which the graph walk stops.
-    control_inputs: if True, control inputs will be used while moving backward.
-    Returns:
-    A Python set of all the `tf.Operation` behind `seed_ops`.
-    Raises:
-    TypeError: if `seed_ops` or `within_ops` cannot be converted to a list of
-        `tf.Operation`.
-    """
-    from tensorflow.contrib.graph_editor import util
-    if not util.is_iterable(seed_ops):
-        seed_ops = [seed_ops]
-    if not seed_ops:
-        return []
-    if isinstance(seed_ops[0], tf_ops.Tensor):
-        ts = util.make_list_of_t(seed_ops, allow_graph=False)
-        seed_ops = util.get_generating_ops(ts)
-    else:
-        seed_ops = util.make_list_of_op(seed_ops, allow_graph=False)
-
-    stop_at_ts = frozenset(util.make_list_of_t(stop_at_ts))
-    seed_ops = frozenset(util.make_list_of_op(seed_ops))
-    if within_ops:
-        within_ops = util.make_list_of_op(within_ops, allow_graph=False)
-        within_ops = frozenset(within_ops)
-        seed_ops &= within_ops
-
-    def is_within(op):
-        return (within_ops is None or op in within_ops) and (
-            within_ops_fn is None or within_ops_fn(op))
-
-    result = list(seed_ops)
-    wave = set(seed_ops)
-    while wave:
-        new_wave = set()
-        for op in wave:
-            for new_t in op.inputs:
-                if new_t in stop_at_ts:
-                    continue
-                if new_t.op not in result and is_within(new_t.op):
-                    new_wave.add(new_t.op)
-            if control_inputs:
-                for new_op in op.control_inputs:
-                    if new_op not in result and is_within(new_op):
-                        new_wave.add(new_op)
-        util.concatenate_unique(result, new_wave)
-        wave = new_wave
-    if not inclusive:
-        result = [op for op in result if op not in seed_ops]
-    return result
 
 def run_inference_graph(model, trained_checkpoint_prefix,
                         input_images, annot_filenames, input_shape, pad_to_shape,
@@ -213,18 +177,37 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         label_color_map=label_color_map)
     pred_tensor = outputs[model.main_class_predictions_key]
 
+    # pl_size = np.reduce_prod(placeholder_tensor.get_shape().as_list())
+    # placeholder_tensor = tf.random_uniform(tf.shape(placeholder_tensor),maxval=pl_size)
+
+    stats_dir = os.path.join(output_directory, "stats")
+    mean_file = os.path.join(stats_dir, "mean.npz")
+    class_mean_file = os.path.join(stats_dir, "class_mean.npz")
+    cov_file = os.path.join(stats_dir, "cov.npz")
+    class_cov_file = os.path.join(stats_dir, "class_cov.npz")
+
     x = None
     y = None
     m_k = None
-    v_k = None
+    v_k_inv = None
     class_m_k = None
-    class_v_k = None
-    single_m_k = None
-    single_v_k = None
-    with tf.Session() as sess:
+    class_v_k_inv = None
+    first_pass = True
+    if FLAGS.compute_stats:
+        if os.path.exists(mean_file) and os.path.exists(class_mean_file):
+            m_k = torch.tensor(np.load(mean_file)["arr_0"])
+            class_m_k = torch.tensor(np.load(class_mean_file)["arr_0"])
+            first_pass = False
+            print("second pass")
+        else:
+            print("first pass")
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth=True
+
+    with tf.Session(config=config) as sess:
         input_graph_def = tf.get_default_graph().as_graph_def()
         saver = tf.train.Saver(tf.global_variables())
-
+        
         fetch = [pred_tensor]
         if FLAGS.compute_stats:
             # feats = outputs[model.final_logits_key]
@@ -241,7 +224,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             fetch += [outputs[model.final_logits_key], sorted_feats]
         saver.restore(sess, trained_checkpoint_prefix)
 
-        for idx, image_path in enumerate(input_images):
+        for idx in range(len(input_images)):
+            image_path = input_images[idx]
             image_raw = np.array(Image.open(image_path))
             annot_raw = cv2.imread(annot_filenames[idx])
 
@@ -255,8 +239,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             if FLAGS.compute_stats:
                 logits = res[1]
                 sorted_logtis = res[2]
-                m_k, v_k = compute_stats(m_k, v_k, logits, idx+1)
-                class_m_k, class_v_k = compute_stats(class_m_k, class_v_k, sorted_logtis, idx+1)
+                m_k, v_k_inv = compute_stats(m_k, v_k_inv, logits, idx+1, first_pass)
+                class_m_k, class_v_k_inv = compute_stats(class_m_k, class_v_k_inv, sorted_logtis, idx+1, first_pass)
             
             # if idx > 10:
             #     import pdb; pdb.set_trace()
@@ -280,28 +264,40 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 y = np.arange(0, predictions.shape[1], dtype=np.int32)
                 x, y = np.meshgrid(x,y)
             
-            if idx > 30:
-                break
+            # if idx > 10:
+            #     break
 
-        # m_k, v_k = sess.run([mean, covar])
+        # m_k, v_k_inv = sess.run([mean, covar])
 
-        m_k = m_k.numpy()
-        v_k = v_k.numpy()
-        class_v_k = class_v_k.numpy()
-        class_m_k = class_m_k.numpy()
-        if np.isnan(m_k).any() or np.isnan(v_k).any() or np.isnan(class_v_k).any() or np.isnan(class_m_k).any() :
-            print("nan time")
-            import pdb; pdb.set_trace()
+        if FLAGS.compute_stats:
+            os.makedirs(stats_dir, exist_ok=True)
 
-        np.save("mean.npy", m_k)
-        np.save("cov.npy", v_k/(idx+1))
-        np.save("class_cov.npy", class_v_k/(idx+1))
-        np.save("class_mean.npy", class_m_k)
-            # print(save_location)
-            # res = 25
-            # vec_pred = np.fliplr(vec_pred)
-            # plt.quiver(vec_pred[0,::res,::res,0], vec_pred[0,::res,::res,1])
-            # plt.show()
+            if first_pass:
+                class_m_k = class_m_k.numpy()
+                m_k = m_k.numpy()
+                if np.isnan(m_k).any() or np.isnan(class_m_k).any():
+                    print("nan time")
+                    import pdb; pdb.set_trace()
+                np.savez(mean_file, m_k)
+                np.savez(class_mean_file, class_m_k)
+            else:
+                #v_k = b_inv(v_k_inv)
+                #class_v_k = b_inv(class_v_k_inv)
+
+                class_v_k = class_v_k.numpy()
+                v_k = v_k.numpy()
+
+                if np.isnan(v_k).any() or np.isnan(class_v_k).any():
+                    print("nan time")
+                    import pdb; pdb.set_trace()
+
+                np.savez(class_cov_file, class_v_k/(idx+1))
+                np.savez(cov_file, v_k/(idx+1))
+        # print(save_location)
+        # res = 25
+        # vec_pred = np.fliplr(vec_pred)
+        # plt.quiver(vec_pred[0,::res,::res,0], vec_pred[0,::res,::res,1])
+        # plt.show()
 
 
 def main(_):

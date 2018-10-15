@@ -45,12 +45,13 @@ flags.DEFINE_string('trained_checkpoint', None,
                     'Path to trained checkpoint, typically of the form '
                     'path/to/model.ckpt')
 
-flags.DEFINE_string('output_dir', None, 'Path to write outputs images.')
-
-flags.DEFINE_string('dist_dir', None, 'Path to write distance images')
+flags.DEFINE_string('eval_dir', None, 'Path to write outputs images.')
 
 flags.DEFINE_boolean('label_ids', False,
                      'Whether the output should be label ids.')
+
+flags.DEFINE_boolean('use_class', False,
+                     'Use class covariance or not')
 
 
 def _valid_file_ext(input_path):
@@ -76,26 +77,36 @@ def _get_images_from_path(input_path):
 def nan_to_num(val):
     return tf.where(tf.is_nan(val), tf.zeros_like(val), val)
 
-def process_logits(final_logits, mean_v, std_v, depth, pred_shape, num_classes):
-    mean = tf.placeholder(tf.float32, mean_v.shape, "mean")
-    std = tf.placeholder(tf.float32, std_v.shape, "std")
-    in_shape = final_logits.get_shape().as_list()
+def process_logits(final_logits, mean_v, var_v, depth, pred_shape, num_classes, use_class):
+    mean_p = tf.placeholder(tf.float32, mean_v.shape, "mean")
+    var_p = tf.placeholder(tf.float32, var_v.shape, "var")
+    var = var_p
+
+    in_shape = final_logits.get_shape().as_list() 
+    if not use_class:
+        var = tf.tile(tf.expand_dims(var, 3), [1, 1, 1, num_classes, 1, 1])
+    var = tf.reshape(var, [-1, in_shape[-1], in_shape[-1]])
+    mean = tf.reshape(mean_p, [-1, num_classes, in_shape[-1]])
+
     final_logits = tf.reshape(final_logits, [-1, depth])
-    temp = tf.expand_dims(final_logits,-1) - mean
-    temp2 = nan_to_num(1./(std + 0.000001))
-    left = temp * temp2
-    dist = tf.reduce_sum(tf.multiply(left, temp), 1)
+    temp = tf.expand_dims(final_logits,-2) - mean
+    temp = tf.expand_dims(tf.reshape(temp, [-1, in_shape[-1]]), 1)
+    #temp2 = nan_to_num(1./(var + 0.000001))
+    
+    left = tf.matmul(temp, var)
+    dist = tf.squeeze(tf.matmul(left, temp, transpose_b=True))
+
     img_dist = tf.expand_dims(tf.reshape(dist, in_shape[1:-1] + [num_classes]), 0)
     full_dist = tf.image.resize_bilinear(img_dist, (pred_shape[1],pred_shape[2]))
     dist_class = tf.argmin(full_dist, -1)
     # scaled_dist = full_dist/tf.reduce_max(full_dist)
     # dist_out = (scaled_dist*255).astype(np.uint8)
-    return dist_class, full_dist, mean, std #, [temp, temp2, left, dist, img_dist]
+    return dist_class, full_dist, mean_p, var_p #, [temp, temp2, left, dist, img_dist]
 
 def run_inference_graph(model, trained_checkpoint_prefix,
                         input_images, input_shape, pad_to_shape,
                         label_color_map, output_directory,
-                        dist_dir, num_classes):
+                        dist_dir, eval_dir, num_classes):
 
     outputs, placeholder_tensor = deploy_segmentation_inference_graph(
         model=model,
@@ -105,16 +116,31 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     pred_tensor = outputs[model.main_class_predictions_key]
     final_logits = outputs[model.final_logits_key]
 
-    mean = np.load("class_mean.npy")
-    std = np.load("class_std.npy")
-    other_dims = list(std.shape[-2:])
-    depth = other_dims[0]
+    use_class = FLAGS.use_class
 
-    mean = np.reshape(mean, [-1] + other_dims)
-    std = np.reshape(std, [-1] + other_dims)
-
-    dist_class, full_dist, mean_p, std_p  = process_logits(final_logits, mean, std, depth, pred_tensor.get_shape().as_list(), num_classes)
+    stats_dir = os.path.join(eval_dir, "stats")
+    mean_file = os.path.join(stats_dir, "mean.npz")
+    class_mean_file = os.path.join(stats_dir, "class_mean.npz")
+    cov_file = os.path.join(stats_dir, "cov_inv.npz")
+    class_cov_file = os.path.join(stats_dir, "class_cov_inv.npz")
+    if use_class:
+        cov_file = class_cov_file
+    print("loading means and covs")
+    mean = np.load(class_mean_file)["arr_0"]
+    var = np.load(cov_file)["arr_0"]
+    print("done loading")
+    var_dims = list(var.shape[-2:])
+    mean_dims = list(mean.shape[-2:])
+    depth = mean_dims[-1]
+    
+    #mean = np.reshape(mean, [-1] + mean_dims)
+    #var = np.reshape(var, [-1] + var_dims)
+    
+    dist_class, full_dist, mean_p, var_p  = process_logits(final_logits, mean, var, depth, pred_tensor.get_shape().as_list(), num_classes, use_class)
     dist_colour = _map_to_colored_labels(dist_class, pred_tensor.get_shape().as_list(), label_color_map)
+
+    mean = np.reshape(mean, mean_p.get_shape().as_list())
+    var = np.reshape(var, var_p.get_shape().as_list())
 
     fetch = [pred_tensor, dist_colour, dist_class, full_dist]
     
@@ -130,18 +156,23 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             start_time = timeit.default_timer()
             
             res = sess.run(fetch,
-                feed_dict={placeholder_tensor: image_raw, mean_p: mean, std_p: std})
+                feed_dict={placeholder_tensor: image_raw, mean_p: mean, var_p: var})
             predictions = res[0]
 
             # logits_output = res[1]
             # in_shape = logits_output.shape
             # logits_output = np.reshape(logits_output, [-1, depth])
             # temp = logits_output - mean
-            # left = temp * np.nan_to_num(1./std)
+            # left = temp * np.nan_to_num(1./var)
             # dist = inner1d(left, temp)
             # img_dist = np.reshape(dist, in_shape[1:-1])
             # full_dist = cv2.resize(img_dist, (predictions.shape[2],predictions.shape[1]), interpolation=cv2.INTER_LINEAR)
             dist_out = res[1][0].astype(np.uint8)
+            # full_dist_out = res[3][0]
+            # for i in range(num_classes):
+            #     temp = full_dist_out[:,:,i]
+            #     cv2.imshow(str(i), temp/np.max(temp))
+            # cv2.waitKey()
             #import pdb; pdb.set_trace()
             # scaled_dist = full_dist/np.max(full_dist)
             # dist_out = (scaled_dist*255).astype(np.uint8)
@@ -166,8 +197,12 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
 
 def main(_):
-    output_directory = FLAGS.output_dir
-    dist_dir = FLAGS.dist_dir
+    eval_dir = FLAGS.eval_dir
+    output_directory = os.path.join(eval_dir, "inf")
+    if FLAGS.use_class:
+        dist_dir = os.path.join(eval_dir, "class_dist")
+    else:
+        dist_dir = os.path.join(eval_dir, "dist")
     tf.gfile.MakeDirs(output_directory)
     tf.gfile.MakeDirs(dist_dir)
     pipeline_config = pipeline_pb2.PipelineConfig()
@@ -196,7 +231,7 @@ def main(_):
 
     run_inference_graph(segmentation_model, FLAGS.trained_checkpoint,
                         input_images, input_shape, pad_to_shape,
-                        label_map, output_directory, dist_dir, num_classes)
+                        label_map, output_directory, dist_dir, eval_dir, num_classes)
 
 if __name__ == '__main__':
     tf.app.run()
