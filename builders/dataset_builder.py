@@ -20,7 +20,6 @@ _IMAGE_NAME_FIELD       = 'image_name'
 _HEIGHT_FIELD           = 'height'
 _WIDTH_FIELD            = 'width'
 _LABEL_FIELD           = 'labels_class'
-_VEC_FIELD           = 'vec'
 
 _ITEMS_TO_DESCRIPTIONS = {
     'image':        ('A color image of varying height and width.'),
@@ -110,10 +109,6 @@ def _create_tf_example_decoder():
             tf.FixedLenFeature((), tf.string, default_value=''),
         'image/segmentation/class/format':
             tf.FixedLenFeature((), tf.string, default_value='png'),
-        'image/vec':
-            tf.FixedLenFeature((), tf.string),
-        'image/vec/format':
-            tf.FixedLenFeature((), tf.string, default_value='raw'),
     }
 
     input_image = tfexample_decoder.Image(
@@ -126,12 +121,7 @@ def _create_tf_example_decoder():
         format_key='image/segmentation/class/format',
         shape=(1024, 2048, 1), # CITYSCAPES SPECIFIC
         channels=1)
-    
-    vec_data = Raw(
-        image_key='image/vec',
-        format_key='image/vec/format',
-        shape=(1024, 2048, 2), #CITYSCAPSE SPECIFIC
-        dtype=tf.int32)
+
 
     items_to_handlers = {
         _IMAGE_FIELD: input_image,
@@ -139,7 +129,6 @@ def _create_tf_example_decoder():
         _HEIGHT_FIELD: tfexample_decoder.Tensor('image/height'),
         _WIDTH_FIELD: tfexample_decoder.Tensor('image/width'),
         _LABEL_FIELD: ground_truth_image,
-        _VEC_FIELD: vec_data,
     }
     
     return tfexample_decoder.TFExampleDecoder(
@@ -181,8 +170,8 @@ def build(input_reader_config):
             shuffle=input_reader_config.shuffle,
             seed=_DATASET_SHUFFLE_SEED)
 
-        (image, image_name, height, width, label, vec) = provider.get([_IMAGE_FIELD,
-            _IMAGE_NAME_FIELD, _HEIGHT_FIELD, _WIDTH_FIELD, _LABEL_FIELD, _VEC_FIELD])
+        (image, image_name, height, width, label) = provider.get([_IMAGE_FIELD,
+            _IMAGE_NAME_FIELD, _HEIGHT_FIELD, _WIDTH_FIELD, _LABEL_FIELD])
 
     return {
         _IMAGE_FIELD: image,
@@ -190,5 +179,4 @@ def build(input_reader_config):
         _HEIGHT_FIELD: height,
         _WIDTH_FIELD: width,
         _LABEL_FIELD: label,
-        _VEC_FIELD: vec
     }

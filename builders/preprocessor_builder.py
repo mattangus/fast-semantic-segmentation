@@ -38,12 +38,10 @@ def _get_or_create_preprocess_rand_vars(generator_func,
 
 def set_fixed_image_size(images,
                          labels,
-                         vecs,
                          height_to_set,
                          width_to_set,
                          images_channel_dim=3,
                          labels_channel_dim=1,
-                         vecs_channel_dim=2,
                          preprocess_vars_cache=None):
     with tf.name_scope('DimensionInput', values=[images, labels]):
         fixed_input_tensor_shape = (
@@ -52,19 +50,14 @@ def set_fixed_image_size(images,
         fixed_label_tensor_shape = (
             height_to_set, width_to_set, labels_channel_dim)
         labels.set_shape(fixed_label_tensor_shape)
-        fixed_vec_tensor_shape = (
-            height_to_set, width_to_set, vecs_channel_dim)
-        vecs.set_shape(fixed_vec_tensor_shape)
-        return images, labels, vecs
+        return images, labels
 
 def pad_to_specific_size(images,
                          labels,
-                         vecs,
                          height_to_set,
                          width_to_set,
                          images_channel_dim=3,
                          labels_channel_dim=1,
-                         vecs_channel_dim=2,
                          preprocess_vars_cache=None):
     with tf.name_scope('PadInput', values=[images, labels]):
         fixed_input_tensor_shape = (
@@ -80,12 +73,7 @@ def pad_to_specific_size(images,
             padded_labels = tf.image.pad_to_bounding_box(
                                 labels, 0, 0, height_to_set, width_to_set)
             padded_labels.set_shape(fixed_label_tensor_shape)
-        fixed_vecs_tensor_shape = (
-            height_to_set, width_to_set, vecs_channel_dim)
-        padded_vecs = tf.image.pad_to_bounding_box(
-                            vecs, 0, 0, height_to_set, width_to_set)
-        padded_vecs.set_shape(fixed_vecs_tensor_shape)
-        return padded_images, padded_labels, padded_vecs
+        return padded_images, padded_labels
 
 
 def _compute_new_static_size(image, min_dimension, max_dimension):
@@ -126,7 +114,6 @@ def _compute_new_static_size(image, min_dimension, max_dimension):
 
 def resize_to_range(image,
                     label=None,
-                    vecs=None,
                     min_dimension=None,
                     max_dimension=None,
                     method=tf.image.ResizeMethod.BILINEAR,
@@ -145,14 +132,11 @@ def resize_to_range(image,
                             new_size[:-1], align_corners=True)
         new_label = tf.image.resize_nearest_neighbor(labels,
                                 new_size[:-1], align_corners=True)
-        new_vecs = tf.image.resize_nearest_neighbor(vecs,
-                                new_size[:-1], align_corners=True)
-    return (new_image, new_label, new_vecs)
+    return (new_image, new_label)
 
 
 def random_scale(images,
                  labels,
-                 vecs,
                  min_scale_ratio=0.5,
                  max_scale_ratio=2.0,
                  pad_to_dims=None,
@@ -178,14 +162,11 @@ def random_scale(images,
         # Must be 4D tensor for resize ops
         images = tf.expand_dims(images, 0)
         labels = tf.expand_dims(labels, 0)
-        vecs = tf.expand_dims(vecs, 0)
 
         scaled_images = tf.image.resize_bilinear(
                                 images, new_shape, align_corners=True)
         scaled_labels = tf.image.resize_nearest_neighbor(
                                 labels, new_shape, align_corners=True)
-        scaled_vecs = tf.image.resize_nearest_neighbor(
-                                vecs, new_shape, align_corners=True)
         if pad_to_dims is not None:
             crop_height, crop_width = pad_to_dims
             target_height = (image_newysize +
@@ -196,19 +177,15 @@ def random_scale(images,
                 scaled_images, 0, 0, target_height, target_width)
             scaled_labels = tf.image.pad_to_bounding_box(
                 scaled_labels, 0, 0, target_height, target_width)
-            scaled_vecs = tf.image.pad_to_bounding_box(
-                scaled_vecs, 0, 0, target_height, target_width)
         output_images = tf.squeeze(scaled_images, [0])
         output_labels = tf.squeeze(scaled_labels, [0])
-        output_vecs = tf.squeeze(scaled_vecs, [0])
-        return output_images, output_labels, output_vecs
+        return output_images, output_labels
 
 
-def random_crop(images, labels, vecs,
+def random_crop(images, labels,
                 crop_height, crop_width,
                 images_channel_dim=3,
                 labels_channel_dim=1,
-                vecs_channel_dim=2,
                 preprocess_vars_cache=None):
 
     def _apply_random_crop(inputs, offsets, crop_shape):
@@ -216,7 +193,7 @@ def random_crop(images, labels, vecs,
         out_inputs = tf.reshape(sliced_inputs, crop_shape)
         return out_inputs
 
-    with tf.name_scope('RandomCropImage', values=[images, labels, vecs]):
+    with tf.name_scope('RandomCropImage', values=[images, labels]):
         images_shape = tf.shape(images)
         images_height = images_shape[0]
         images_width = images_shape[1]
@@ -245,12 +222,9 @@ def random_crop(images, labels, vecs,
             [crop_height, crop_width, images_channel_dim])
         crop_shape_labels = tf.stack(
             [crop_height, crop_width, labels_channel_dim])
-        crop_shape_vecs = tf.stack(
-            [crop_height, crop_width, vecs_channel_dim])
 
         cropped_images = _apply_random_crop(images, offsets, crop_shape_images)
         cropped_labels = _apply_random_crop(labels, offsets, crop_shape_labels)
-        cropped_vecs = _apply_random_crop(vecs, offsets, crop_shape_vecs)
 
         # Must set shape here or in the set shape preprocessor step
         # when dealing with ICNet
@@ -259,23 +233,20 @@ def random_crop(images, labels, vecs,
                                      images_channel_dim))
             cropped_labels.set_shape((crop_height, crop_width,
                                      labels_channel_dim))
-            cropped_vecs.set_shape((crop_height, crop_width,
-                                     vecs_channel_dim))
                                      
 
-        return cropped_images, cropped_labels, cropped_vecs
+        return cropped_images, cropped_labels
 
 
 def random_horizontal_flip(images,
                            labels,
-                           vecs,
                            seed=_RANDOM_PREPROCESSOR_SEED,
                            preprocess_vars_cache=None):
     def _flip_image(item):
         flipped_item = tf.image.flip_left_right(item)
         return flipped_item
 
-    with tf.name_scope('RandomHorizontalFlip', values=[images, labels, vecs]):
+    with tf.name_scope('RandomHorizontalFlip', values=[images, labels]):
         generator_func = functools.partial(
                             tf.random_uniform, [], seed=seed)
         do_a_flip_random = _get_or_create_preprocess_rand_vars(
@@ -287,24 +258,20 @@ def random_horizontal_flip(images,
             lambda: _flip_image(images), lambda: images)
         flipped_labels = tf.cond(do_a_flip_random,
                 lambda: _flip_image(labels), lambda: labels)
-        flipped_vecs = tf.cond(do_a_flip_random,
-                lambda: _flip_image(vecs), lambda: vecs)
 
-        return flipped_images, flipped_labels, flipped_vecs
+        return flipped_images, flipped_labels
 
 
 def preprocess_runner(tensor_dict, func_list, skip_labels=False, preprocess_vars_cache=None):
     if dataset_builder._IMAGE_FIELD not in tensor_dict \
-                or dataset_builder._LABEL_FIELD not in tensor_dict \
-                or dataset_builder._VEC_FIELD not in tensor_dict:
+                or dataset_builder._LABEL_FIELD not in tensor_dict:
         raise ValueError('"tensor_dict" must have both image,'
-                         'label, and vec fields')
+                         'label fields')
     for item_key in [dataset_builder._IMAGE_FIELD,
-                     dataset_builder._LABEL_FIELD,
-                     dataset_builder._VEC_FIELD]:
+                     dataset_builder._LABEL_FIELD]:
         items = tensor_dict[item_key]
         if len(items.get_shape()) != 3:
-            raise ValueError('Images, Labels, or Vec field in tensor_dict should be rank 4')
+            raise ValueError('Images, Labels field in tensor_dict should be rank 4')
         #tensor_dict[item_key] = items
 
     if preprocess_vars_cache is None:
@@ -323,18 +290,16 @@ def preprocess_runner(tensor_dict, func_list, skip_labels=False, preprocess_vars
         #    tf.equal(images_shape, labels_shape),
         #    ["Label and Image shape must match"])
     
-    vecs = tf.to_float(tensor_dict[dataset_builder._VEC_FIELD])
 
     # Apple proprocessor function
     with tf.variable_scope("preprocessor"):
         for preprocessor_step_func in func_list:
-            images, labels, vecs = preprocessor_step_func(images=images, labels=labels, vecs=vecs,
+            images, labels = preprocessor_step_func(images=images, labels=labels,
                             preprocess_vars_cache=preprocess_vars_cache)
 
     output_dict = {}
     output_dict[dataset_builder._IMAGE_FIELD] = images
     output_dict[dataset_builder._LABEL_FIELD] = labels
-    output_dict[dataset_builder._VEC_FIELD] = vecs
     return output_dict
 
 

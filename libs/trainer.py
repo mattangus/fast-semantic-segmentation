@@ -69,10 +69,9 @@ def create_training_model_losses(input_queue, create_model_fn, train_config,
     def extract_images_and_targets(read_data):
         images = read_data[dataset_builder._IMAGE_FIELD]
         labels = read_data[dataset_builder._LABEL_FIELD]
-        vec = read_data[dataset_builder._VEC_FIELD]
-        return (images, labels, vec)
+        return (images, labels)
     
-    (images, labels, vecs) = zip(*map(extract_images_and_targets, [read_data_list]))
+    (images, labels) = zip(*map(extract_images_and_targets, [read_data_list]))
 
     # Incase we need to do zero centering, we do it here
     preprocessed_images = []
@@ -82,7 +81,6 @@ def create_training_model_losses(input_queue, create_model_fn, train_config,
     images = tf.concat(preprocessed_images, 0, name="Inputs")
 
     segmentation_model.provide_groundtruth(labels[0])
-    segmentation_model.provide_vecfield(vecs[0])
     prediction_dict = segmentation_model.predict(images)
 
     # Add checkpointing nodes to correct collection

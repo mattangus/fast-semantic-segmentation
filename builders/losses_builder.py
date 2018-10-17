@@ -87,7 +87,6 @@ def build(loss_config):
                          'losses_pb2.ClassificationLoss.')
 
     class_loss = None
-    vec_loss = None
 
     class_loss_type = loss_config.classification_loss.WhichOneof('loss_type')
     if class_loss_type == 'softmax':
@@ -98,19 +97,5 @@ def build(loss_config):
             ignore_label=loss_config.ignore_label)
     else:
         raise ValueError('Empty class loss config.')
-
-    if loss_config.use_vec_loss:
-        vec_loss_type = loss_config.vector_field_loss.WhichOneof('loss_type')
-        if vec_loss_type == 'l2norm':
-            vec_loss = partial(_l2norm,
-                ignore_label=loss_config.ignore_label)
-        elif vec_loss_type == 'l2normmag':
-            vec_loss = partial(_l2norm_mag,
-                ignore_label=loss_config.ignore_label)
-        elif vec_loss_type == 'l2normsmooth':
-            vec_loss = partial(_l2norm_smooth,
-                ignore_label=loss_config.ignore_label)
-        else:
-            raise ValueError('Empty vec loss config.')
     
-    return class_loss, vec_loss
+    return class_loss
