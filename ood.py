@@ -53,6 +53,9 @@ flags.DEFINE_boolean('label_ids', False,
 flags.DEFINE_boolean('use_class', False,
                      'Use class covariance or not')
 
+flags.DEFINE_boolean('use_pool', False,
+                     'avg pool over spatial dims')
+
 
 def _valid_file_ext(input_path):
     ext = os.path.splitext(input_path)[-1].upper()
@@ -77,16 +80,20 @@ def _get_images_from_path(input_path):
 def nan_to_num(val):
     return tf.where(tf.is_nan(val), tf.zeros_like(val), val)
 
-def process_logits(final_logits, mean_v, var_v, depth, pred_shape, num_classes, use_class):
+def process_logits(final_logits, mean_v, var_v, depth, pred_shape, num_classes, use_class, use_pool):
     mean_p = tf.placeholder(tf.float32, mean_v.shape, "mean")
     var_p = tf.placeholder(tf.float32, var_v.shape, "var")
     var = var_p
+    mean = mean_p
 
     in_shape = final_logits.get_shape().as_list() 
     if not use_class:
         var = tf.tile(tf.expand_dims(var, 3), [1, 1, 1, num_classes, 1, 1])
+    if use_pool:
+        var = tf.reduce_mean(var, axis=[0,1,2], keepdims=True)
+        mean = tf.reduce_mean(mean, axis=[0,1,2], keepdims=True)
     var = tf.reshape(var, [-1, in_shape[-1], in_shape[-1]])
-    mean = tf.reshape(mean_p, [-1, num_classes, in_shape[-1]])
+    mean = tf.reshape(mean, [-1, num_classes, in_shape[-1]])
 
     final_logits = tf.reshape(final_logits, [-1, depth])
     temp = tf.expand_dims(final_logits,-2) - mean
@@ -117,6 +124,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     final_logits = outputs[model.final_logits_key]
 
     use_class = FLAGS.use_class
+    use_pool = FLAGS.use_pool
 
     stats_dir = os.path.join(eval_dir, "stats")
     mean_file = os.path.join(stats_dir, "mean.npz")
@@ -136,7 +144,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     #mean = np.reshape(mean, [-1] + mean_dims)
     #var = np.reshape(var, [-1] + var_dims)
     
-    dist_class, full_dist, mean_p, var_p  = process_logits(final_logits, mean, var, depth, pred_tensor.get_shape().as_list(), num_classes, use_class)
+    dist_class, full_dist, mean_p, var_p  = process_logits(final_logits, mean, var, depth, pred_tensor.get_shape().as_list(), num_classes, use_class, use_pool)
     dist_colour = _map_to_colored_labels(dist_class, pred_tensor.get_shape().as_list(), label_color_map)
 
     mean = np.reshape(mean, mean_p.get_shape().as_list())
@@ -199,10 +207,13 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 def main(_):
     eval_dir = FLAGS.eval_dir
     output_directory = os.path.join(eval_dir, "inf")
+    suff = ""
+    if FLAGS.use_pool:
+        suff = "_pool"
     if FLAGS.use_class:
-        dist_dir = os.path.join(eval_dir, "class_dist")
+        dist_dir = os.path.join(eval_dir, "class_dist" + suff)
     else:
-        dist_dir = os.path.join(eval_dir, "dist")
+        dist_dir = os.path.join(eval_dir, "dist" + suff)
     tf.gfile.MakeDirs(output_directory)
     tf.gfile.MakeDirs(dist_dir)
     pipeline_config = pipeline_pb2.PipelineConfig()

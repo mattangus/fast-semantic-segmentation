@@ -183,8 +183,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     stats_dir = os.path.join(output_directory, "stats")
     mean_file = os.path.join(stats_dir, "mean.npz")
     class_mean_file = os.path.join(stats_dir, "class_mean.npz")
-    cov_file = os.path.join(stats_dir, "cov.npz")
-    class_cov_file = os.path.join(stats_dir, "class_cov.npz")
+    cov_file = os.path.join(stats_dir, "cov_inv.npz")
+    class_cov_file = os.path.join(stats_dir, "class_cov_inv.npz")
 
     x = None
     y = None
@@ -284,15 +284,15 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 #v_k = b_inv(v_k_inv)
                 #class_v_k = b_inv(class_v_k_inv)
 
-                class_v_k = class_v_k.numpy()
-                v_k = v_k.numpy()
+                class_v_k_inv = class_v_k_inv.numpy()
+                v_k_inv = v_k_inv.numpy()
 
-                if np.isnan(v_k).any() or np.isnan(class_v_k).any():
+                if np.isnan(v_k_inv).any() or np.isnan(class_v_k_inv).any():
                     print("nan time")
                     import pdb; pdb.set_trace()
 
-                np.savez(class_cov_file, class_v_k/(idx+1))
-                np.savez(cov_file, v_k/(idx+1))
+                np.savez(class_cov_file, class_v_k_inv/(idx+1))
+                np.savez(cov_file, v_k_inv/(idx+1))
         # print(save_location)
         # res = 25
         # vec_pred = np.fliplr(vec_pred)
