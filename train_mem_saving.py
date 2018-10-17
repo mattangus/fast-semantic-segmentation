@@ -48,7 +48,12 @@ ICNET_GRADIENT_CHECKPOINTS = [
     'SharedFeatureExtractor/resnet_v1_50/block4/unit_3/bottleneck_v1/Relu',
     'FastPSPModule/Conv/Relu6'
 ]
-
+ICNET_GRADIENT_CHECKPOINTS = [
+    "SharedFeatureExtractor/resnet_v1_50/block1/unit_3/bottleneck_v1/Relu",
+    "SharedFeatureExtractor/resnet_v1_50/block2/unit_4/bottleneck_v1/Relu",
+    "SharedFeatureExtractor/resnet_v1_50/block3/unit_6/bottleneck_v1/Relu",
+    "SharedFeatureExtractor/resnet_v1_50/block4/unit_3/bottleneck_v1/Relu",
+]
 
 tf.logging.set_verbosity(tf.logging.INFO)
 

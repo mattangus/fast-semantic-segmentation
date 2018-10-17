@@ -54,10 +54,9 @@ def _build_pspnet_icnet_model(model_config, is_training, add_summaries,
                                                 is_training)
 
     loss_config = model_config.loss
-    classification_loss, vec_field_loss = (
+    classification_loss = (
             losses_builder.build(loss_config))
     use_aux_loss = loss_config.use_auxiliary_loss
-    use_vec_loss = loss_config.use_vec_loss
 
     scale_predictions = model_config.scale_predictions #model_config.something
 
@@ -71,8 +70,6 @@ def _build_pspnet_icnet_model(model_config, is_training, add_summaries,
         'use_aux_loss': use_aux_loss,
         'add_summaries': add_summaries,
         'scale_pred': scale_predictions,
-        'use_vec_loss': use_vec_loss,
-        'vector_field_loss': vec_field_loss
     }
 
     if not build_baseline_psp:
@@ -95,7 +92,6 @@ def _build_pspnet_icnet_model(model_config, is_training, add_summaries,
             # TODO: remove hardcoded values here
             common_kwargs['main_loss_weight'] = 1.0
             common_kwargs['aux_loss_weight'] = 0.4
-            common_kwargs['vec_loss_weight'] = 0.001
         common_kwargs['train_reduce'] = model_config.train_reduce
         model = (num_classes, pspnet_architecture.PSPNetArchitecture(
             filter_scale=filter_scale,

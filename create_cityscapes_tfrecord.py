@@ -19,8 +19,6 @@ tf.flags.DEFINE_string('input_pattern', '',
                        'Cityscapes dataset root folder.')
 tf.flags.DEFINE_string('annot_pattern', '',
                        'Pattern matching input images for Cityscapes.')
-tf.flags.DEFINE_string('vec_pattern', '',
-                       'Pattern matching border images for Cityscapes.')
 tf.flags.DEFINE_string('cityscapes_dir', '',
                        'Pattern matching ground truth images for Cityscapes.')
 tf.flags.DEFINE_string('split_type', '',
@@ -38,13 +36,11 @@ tf.logging.set_verbosity(tf.logging.INFO)
 _DEFAULT_PATTEN = {
     'input': '*_leftImg8bit.png',
     'label': '*_gtFine_labelTrainIds.png',
-    'vec': '*_gtFine_labelTrainIds.exr'
 }
 
 _DEFAULT_DIR = {
     'image': 'leftImg8bit',
     'label': 'gtFine',
-    'vec': 'borders'
 }
 
 
@@ -67,34 +63,16 @@ def _open_file(full_path):
     # return image, encoded_file
     return cv2.imread(full_path)
 
-def convert_vec(vec):
-    w = vec.shape[1]
-    h = vec.shape[0]
-    xAbs = vec % w
-    yAbs = (vec - xAbs) / w
-
-    x = np.arange(0, w, dtype=np.int32)
-    y = np.arange(0, h, dtype=np.int32)
-    x, y = np.meshgrid(x,y)
-    
-    xRel = xAbs - x
-    yRel = yAbs - y
-
-    return np.stack([xRel.astype(np.int32), yRel.astype(np.int32)], axis=-1)
-
-def create_tf_example(image_path, label_path, vec_path, image_dir='', is_jpeg=False):
+def create_tf_example(image_path, label_path, image_dir='', is_jpeg=False):
     file_format = 'jpeg' if is_jpeg else 'png'
     full_image_path = os.path.join(image_dir, image_path)
     full_label_path = os.path.join(image_dir, label_path)
-    full_vec_path = os.path.join(image_dir, vec_path)
     image = cv2.imread(full_image_path)
     label = cv2.imread(full_label_path)
-    vec = cv2.imread(full_vec_path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
 
     height = image.shape[0]
     width = image.shape[1]
-    if (height != label.shape[0] or width != label.shape[1] or
-        height != vec.shape[0] or width != vec.shape[1]):
+    if (height != label.shape[0] or width != label.shape[1]):
         raise ValueError('Input and annotated images must have same dims.'
                         'verify the matching pair for {}'.format(full_image_path))
 
@@ -102,11 +80,8 @@ def create_tf_example(image_path, label_path, vec_path, image_dir='', is_jpeg=Fa
         size = tuple([int(d) for d in FLAGS.resize])
         image = cv2.resize(image, size)
         label = cv2.resize(label, size, interpolation=cv2.INTER_NEAREST)
-        vec = cv2.resize(vec, size, interpolation=cv2.INTER_NEAREST)
         height = image.shape[0]
         width = image.shape[1]
-
-    vec = convert_vec(vec)
     
     _, encoded_image = cv2.imencode("." + file_format, image)
     _, encoded_label = cv2.imencode(".png", label)
@@ -122,8 +97,6 @@ def create_tf_example(image_path, label_path, vec_path, image_dir='', is_jpeg=Fa
         'image/channels': _int64_feature(3),
         'image/segmentation/class/encoded': _bytes_feature(encoded_label.tostring()),
         'image/segmentation/class/format':_bytes_feature('png'.encode('utf8')),
-        'image/vec': _bytes_feature(vec.tostring()),
-        'image/vec/format': _bytes_feature('raw'.encode('utf8'))
     }
     
     example = tf.train.Example(
@@ -131,14 +104,14 @@ def create_tf_example(image_path, label_path, vec_path, image_dir='', is_jpeg=Fa
     return example
 
 
-def _create_tf_record(images, labels, vecs, output_path):
+def _create_tf_record(images, labels, output_path):
     options = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.GZIP)
     writer = tf.python_io.TFRecordWriter(output_path, options=options)
     for idx, image in enumerate(images):
         if idx % 100 == 0:
             tf.logging.info('On image %d of %d', idx, len(images))
         tf_example = create_tf_example(
-            image, labels[idx], vecs[idx], is_jpeg=False)
+            image, labels[idx], is_jpeg=False)
         writer.write(tf_example.SerializeToString())
     writer.close()
     tf.logging.info('Finished writing!')
@@ -162,26 +135,30 @@ def main(_):
             _DEFAULT_DIR['image'], FLAGS.split_type, '*', _DEFAULT_PATTEN['input'])
         search_annot_files = os.path.join(FLAGS.cityscapes_dir,
             _DEFAULT_DIR['label'], FLAGS.split_type, '*', _DEFAULT_PATTEN['label'])
-        search_vec_files = os.path.join(FLAGS.cityscapes_dir,
-            _DEFAULT_DIR['vec'], FLAGS.split_type, '*', _DEFAULT_PATTEN['vec'])
         image_filenames = glob.glob(search_image_files)
         annot_filenames = glob.glob(search_annot_files)
-        vec_filenames = glob.glob(search_vec_files)
     else:
         image_filenames = glob.glob(FLAGS.input_pattern)
         annot_filenames = glob.glob(FLAGS.annot_pattern)
-        vec_filenames = glob.glob(FLAGS.annot_pattern)
     
-    if len(image_filenames) != len(annot_filenames) or len(image_filenames) != len(vec_filenames):
+    if len(image_filenames) != len(annot_filenames):
         print("images: ", len(image_filenames))
         print("annot: ", len(annot_filenames))
-        print("vecs: ", len(vec_filenames))
-        raise ValueError('Supplied patterns do not have image counts.')
+        img_suff = {f.replace("/mnt/md0/samba/Release/V1.0/Real/", ""): f for f in image_filenames}
+        annot_suff = {f.replace("/mnt/md0/samba/Release/V1.0/Ids/", ""): f for f in annot_filenames}
+        image_filenames = [img_suff[f] for f in img_suff if f in annot_suff]
+        annot_filenames = [annot_suff[f] for f in annot_suff if f in img_suff]
+        print("new images:", len(image_filenames))
+        print("new annot:", len(annot_filenames))
+        #inter = img_suff.intersection(annot_suff)
+        #if len(annot_filenames) > len(image_filenames):
+        #    print(annot_suff - inter)
+        #else:
+        #    print(img_suff - inter)
 
     _create_tf_record(
             sorted(image_filenames),
             sorted(annot_filenames),
-            sorted(vec_filenames),
             output_path=train_output_path)
 
 

@@ -34,8 +34,6 @@ def create_evaluation_input(create_input_dict_fn,
                 input_dict, func_list=[cropper_fn])
         processed_labels = tf.to_float(
             output_dict[dataset_builder._LABEL_FIELD])
-        processed_vecs = tf.to_float(
-            output_dict[dataset_builder._VEC_FIELD])
     else:
         # Here we only pad input image, then we shrink back the prediction
         padding_fn = functools.partial(preprocessor.pad_to_specific_size,
@@ -44,10 +42,9 @@ def create_evaluation_input(create_input_dict_fn,
         output_dict = preprocessor.preprocess_runner(
                 input_dict, skip_labels=True, func_list=[padding_fn])
         processed_labels = tf.to_float(input_dict[dataset_builder._LABEL_FIELD])
-        processed_vecs = tf.to_float(output_dict[dataset_builder._VEC_FIELD])
 
     processed_images = tf.to_float(output_dict[dataset_builder._IMAGE_FIELD])
-    return processed_images, processed_labels, processed_vecs
+    return processed_images, processed_labels
 
 
 def create_predictions_and_labels(model, create_input_dict_fn,
@@ -57,14 +54,12 @@ def create_predictions_and_labels(model, create_input_dict_fn,
         create_input_dict_fn, input_height, input_width, cropped_eval)
     # Setup a queue for feeding to slim evaluation helpers
     input_queue = prefetch_queue.prefetch_queue(eval_input_pair)
-    eval_images, eval_labels, eval_vec = input_queue.dequeue()
+    eval_images, eval_labels = input_queue.dequeue()
     eval_labels = tf.expand_dims(eval_labels, 0)
     eval_images = tf.expand_dims(eval_images, 0)
-    eval_vec = tf.expand_dims(eval_vec, 0)
     # Main predictions
     mean_subtracted_inputs = model.preprocess(eval_images)
     model.provide_groundtruth(eval_labels)
-    model.provide_vecfield(eval_vec)
     output_dict = model.predict(mean_subtracted_inputs)
 
     # Awkward fix from preprocessing step - we resize back down to label shape

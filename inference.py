@@ -293,11 +293,6 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
                 np.savez(class_cov_file, class_v_k/(idx+1))
                 np.savez(cov_file, v_k/(idx+1))
-        # print(save_location)
-        # res = 25
-        # vec_pred = np.fliplr(vec_pred)
-        # plt.quiver(vec_pred[0,::res,::res,0], vec_pred[0,::res,::res,1])
-        # plt.show()
 
 
 def main(_):

@@ -30,13 +30,10 @@ class PSPNetArchitecture(model.FastSegmentationModel):
                 num_classes,
                 feature_extractor,
                 classification_loss,
-                vector_field_loss,
                 filter_scale,
                 use_aux_loss=True,
-                use_vec_loss=True,
                 main_loss_weight=1,
                 aux_loss_weight=0,
-                vec_loss_weight=0.01,
                 add_summaries=True,
                 scope=None,
                 scale_pred=False,
@@ -47,13 +44,10 @@ class PSPNetArchitecture(model.FastSegmentationModel):
         self._num_classes = num_classes
         self._feature_extractor = feature_extractor
         self._classification_loss = classification_loss
-        self._vector_field_loss = vector_field_loss
         self._filter_scale = filter_scale
         self._use_aux_loss = use_aux_loss
-        self._use_vec_loss = use_vec_loss
         self._main_loss_weight = main_loss_weight
         self._aux_loss_weight = aux_loss_weight
-        self._vec_loss_weight = vec_loss_weight
         self._add_summaries = add_summaries
         self._scale_pred = scale_pred
         self._train_reduce = train_reduce
@@ -67,10 +61,6 @@ class PSPNetArchitecture(model.FastSegmentationModel):
         return 'final_logits'
 
     @property
-    def vec_predictions_key(self):
-        return 'vec_predictions'
-
-    @property
     def aux_predictions_key(self):
         return 'aux_predictions'
 
@@ -81,10 +71,6 @@ class PSPNetArchitecture(model.FastSegmentationModel):
     @property
     def aux_loss_key(self):
         return 'aux_loss'
-    
-    @property
-    def vec_loss_key(self):
-        return 'vec_loss'
 
     def preprocess(self, inputs):
         if inputs.dtype is not tf.float32:
@@ -130,13 +116,6 @@ class PSPNetArchitecture(model.FastSegmentationModel):
                             self._num_classes, 1, 1,
                             activation_fn=None, normalizer_fn=None)
                 prediction_dict[self.aux_predictions_key] = aux_preds
-            if self._use_vec_loss:
-                with tf.variable_scope('VecFieldPredictions'):
-                    vec_preds = slim.conv2d(final_logits, 2,
-                        1, 1, activation_fn=None, normalizer_fn=None)
-                    if not self._is_training:
-                        vec_preds = self._dynamic_interpolation(vec_preds, z_factor=8.0)
-                prediction_dict[self.vec_predictions_key] = vec_preds
             
             return prediction_dict
 
@@ -255,23 +234,7 @@ class PSPNetArchitecture(model.FastSegmentationModel):
                                                         aux_scaled_labels)
                 losses_dict[self.aux_loss_key] = (
                     self._aux_loss_weight * first_aux_loss)
-        
-        if self._use_vec_loss:
-            vec_preds = prediction_dict[self.vec_predictions_key]
-            with tf.name_scope('VecLoss'):
-                if self._scale_pred:
-                    vec_scaled_pred = _resize_logits_to_labels(vec_preds,
-                        self._vec_field_labels)
-                    vec_scaled_labels = self._vec_field_labels
-                else:
-                    vec_scaled_labels = _resize_labels_to_logits(
-                        self._vec_field_labels, vec_preds)
-                    vec_scaled_pred = vec_preds
-                
-                vec_loss = self._vector_field_loss(vec_scaled_pred,
-                                                        vec_scaled_labels)
-                losses_dict[self.vec_loss_key] = (
-                    self._vec_loss_weight * vec_loss)
+
 
         return losses_dict
 

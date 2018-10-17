@@ -95,7 +95,3 @@ class FastSegmentationModel(object):
         """
         self._groundtruth_labels = groundtruth_labels
 
-    def provide_vecfield(self, vec_filed_labels):
-        """
-        """
-        self._vec_field_labels = vec_filed_labels
