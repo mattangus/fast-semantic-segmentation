@@ -11,8 +11,17 @@ def _softmax_classification_loss(predictions, labels, ignore_label):
     one_hot_target = tf.contrib.slim.one_hot_encoding(
                             tf.cast(flattened_labels, tf.int32),
                             num_classes, on_value=1.0, off_value=0.0)
-    not_ignore_mask = tf.to_float(
-                tf.not_equal(flattened_labels, ignore_label))
+    ne = tf.not_equal(flattened_labels, ignore_label)
+    not_ignore_mask = tf.to_float(ne)
+
+    #uncomment the follwoing to debug if one_hot contains invalid values
+    #(i.e. a vec like [0,0,0,...]) the value of num_act should be 0
+    
+    # ignore_mask = tf.to_float(tf.logical_not(ne))
+    # eq_count = tf.reduce_sum(ignore_mask)
+    # ne_count = tf.reduce_sum(not_ignore_mask)
+    # num_act = tf.reduce_sum(tf.to_float(tf.equal(tf.reduce_sum(one_hot_target, -1), 0)) * not_ignore_mask)
+    # one_hot_target = tf.Print(one_hot_target, ["num_act:", num_act, "eq_count:", eq_count, "ne_count:", ne_count])
 
     return tf.losses.softmax_cross_entropy(
                     one_hot_target,

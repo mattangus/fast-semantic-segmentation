@@ -92,7 +92,7 @@ class Raw(tfexample_decoder.ItemHandler):
 
     return image
 
-def _create_tf_example_decoder():
+def _create_tf_example_decoder(input_reader_config):
 
     keys_to_features = {
         'image/encoded':
@@ -111,17 +111,19 @@ def _create_tf_example_decoder():
             tf.FixedLenFeature((), tf.string, default_value='png'),
     }
 
+    height = input_reader_config.height
+    width = input_reader_config.width
+
     input_image = tfexample_decoder.Image(
         image_key='image/encoded',
         format_key='image/format',
-        shape=(1024, 2048, 3), # CITYSCAPES SPECIFIC
+        shape=(height, width, 3), # CITYSCAPES SPECIFIC
         channels=3)
     ground_truth_image = tfexample_decoder.Image(
         image_key='image/segmentation/class/encoded',
         format_key='image/segmentation/class/format',
-        shape=(1024, 2048, 1), # CITYSCAPES SPECIFIC
+        shape=(height, width, 1), # CITYSCAPES SPECIFIC
         channels=1)
-
 
     items_to_handlers = {
         _IMAGE_FIELD: input_image,
@@ -147,11 +149,10 @@ def build(input_reader_config):
 
     if not reader_config.input_path or \
             not os.path.isfile(reader_config.input_path[0]):
-        import pdb; pdb.set_trace()
         raise ValueError('At least one input path must be specified in '
                          '`input_reader_config`.')
 
-    decoder = _create_tf_example_decoder()
+    decoder = _create_tf_example_decoder(input_reader_config)
 
     options = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.GZIP)
 
