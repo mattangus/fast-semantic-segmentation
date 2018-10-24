@@ -6,6 +6,7 @@ message EvalConfig {
     optional uint32 num_examples = 1 [default=5000];
     optional uint32 ignore_label = 2 [default=255];
     optional EvalInputType eval_input_type = 3;
+    optional bool flipped = 4;
 }
 
 message EvalInputType {

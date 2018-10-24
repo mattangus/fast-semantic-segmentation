@@ -7,27 +7,39 @@ from sklearn.decomposition import PCA
 from mpl_toolkits.mplot3d import Axes3D
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--input", type=str, required=True)
+parser.add_argument("--mean", type=str, required=True)
+parser.add_argument("--cov_inv", type=str, required=True)
 #parser.add_argument("--output", type=str, required=True)
-
 
 args = parser.parse_args()
 
-mat = np.load(args.input)
-if "npz" in args.input:
-    mat = mat["arr_0"]
+mean = np.load(args.mean)
+cov_inv = np.load(args.cov_inv)
+if "npz" in args.mean:
+    mean = mean["arr_0"]
+if "npz" in args.cov_inv:
+    cov_inv = cov_inv["arr_0"]
 
-mat = np.swapaxes(mat, 3, 0)
-num_class = mat.shape[0]
-import pdb; pdb.set_trace()
-mat = np.reshape(mat, [num_class, -1])
+mean = np.swapaxes(mean, 3, 0)
+cov_inv = np.swapaxes(cov_inv, 3, 0)
+num_class = mean.shape[0]
+
+#mean = np.reshape(mean, [num_class, -1])
 
 cm = np.zeros([num_class, num_class])
 
+def dist_fn(m, cov_inv, p):
+    temp = p - m
+    cov_inv = np.squeeze(cov_inv)
+
+    left = np.matmul(temp, cov_inv)
+    dist = dist = np.squeeze(np.matmul(left, np.transpose(temp, [0,1,3,2])))
+    return np.mean(dist)
+
 for i in range(num_class):
-    for j in range(i, num_class):
-        cm[i,j] = np.linalg.norm(mat[i,:] - mat[j,:])
-        cm[j,i] = cm[i,j]
+    for j in range(num_class):
+        cm[i,j] = dist_fn(mean[i], cov_inv[i], mean[j])
+        #cm[j,i] = cm[i,j]
 
 xticklabels = ['road','sidewalk','building','wall','fence','pole','traffic light',
                 'traffic sign','vegetation','terrain','sky','person','rider','car',
@@ -48,7 +60,7 @@ c = np.array(c)/255
 
 
 pca = PCA(n_components=3)
-tformed = pca.fit_transform(mat)
+tformed = pca.fit_transform(mean)
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 ax.scatter(tformed[:,0], tformed[:,1], tformed[:,2], c=c)

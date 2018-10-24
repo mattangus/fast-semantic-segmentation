@@ -19,7 +19,7 @@ def _softmax_classification_loss(predictions, labels, ignore_label):
                     logits=tf.to_float(predictions),
                     weights=not_ignore_mask)
 
-def _focal_loss(labels, logits, ignore_label, gamma=2.0, alpha=0.25):
+def _focal_loss(logits, labels, ignore_label, gamma=2.0, alpha=0.25):
     """
     focal loss for multi-classification
     FL(p_t)=-alpha(1-p_t)^{gamma}ln(p_t)
@@ -40,18 +40,18 @@ def _focal_loss(labels, logits, ignore_label, gamma=2.0, alpha=0.25):
     # labels = tf.convert_to_tensor(labels, tf.int64)
     # logits = tf.convert_to_tensor(logits, tf.float32)
     num_classes = logits.get_shape().as_list()[-1]
-    one_hot_target = tf.contrib.slim.one_hot_encoding(
-                            tf.cast(labels, tf.int32),
+    one_hot_target = tf.one_hot(tf.cast(labels, tf.int32),
                             num_classes, on_value=1.0, off_value=0.0)
-    model_out = tf.add(logits, epsilon)
-    ce = tf.multiply(one_hot_target, -tf.log(model_out))
+    one_hot_target = tf.squeeze(one_hot_target, axis=[3])
+    model_out = logits #tf.add(logits, epsilon)
+    ce = tf.multiply(one_hot_target, -tf.log(tf.clip_by_value(model_out,epsilon,1.0)))
     weight = tf.multiply(one_hot_target, tf.pow(tf.subtract(1., model_out), gamma))
     fl = tf.multiply(alpha, tf.multiply(weight, ce))
-    reduced_fl = tf.reduce_max(fl, axis=-1)
+    reduced_fl = tf.reduce_max(fl, axis=-1, keepdims=True)
     not_ignore_mask = tf.to_float(
                 tf.not_equal(labels, ignore_label))
     # reduced_fl = tf.reduce_sum(fl, axis=1)  # same as reduce_max
-    return reduced_fl * not_ignore_mask
+    return tf.reduce_mean(reduced_fl * not_ignore_mask)
 
 def _l2norm(predictions, labels, ignore_label):
     return 0.5 * tf.reduce_mean(tf.squared_difference(labels, predictions))

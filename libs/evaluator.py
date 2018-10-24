@@ -13,6 +13,7 @@ import numpy as np
 from builders import dataset_builder
 from builders import preprocessor_builder as preprocessor
 
+from libs import sliding_window
 from libs import metrics
 
 slim = tf.contrib.slim
@@ -27,13 +28,17 @@ def create_evaluation_input(create_input_dict_fn,
     input_dict = create_input_dict_fn()
     if cropped_eval:
         # We evaluate on a random cropped of the validation set.
-        cropper_fn = functools.partial(preprocessor.random_crop,
-                       crop_height=input_height,
-                       crop_width=input_width)
-        output_dict = preprocessor.preprocess_runner(
-                input_dict, func_list=[cropper_fn])
-        processed_labels = tf.to_float(
-            output_dict[dataset_builder._LABEL_FIELD])
+        # cropper_fn = functools.partial(preprocessor.random_crop,
+        #                crop_height=input_height,
+        #                crop_width=input_width)
+        # output_dict = preprocessor.preprocess_runner(
+        #         input_dict, func_list=[cropper_fn])
+        # processed_labels = tf.to_float(
+        #     output_dict[dataset_builder._LABEL_FIELD])
+        processed_images = tf.to_float(input_dict[dataset_builder._IMAGE_FIELD])
+        #sliding_window.extract_patches(input_dict[dataset_builder._IMAGE_FIELD], input_width, input_height)
+        processed_labels = tf.to_float(input_dict[dataset_builder._LABEL_FIELD])
+        #sliding_window.extract_patches(input_dict[dataset_builder._LABEL_FIELD], input_width, input_height)
     else:
         # Here we only pad input image, then we shrink back the prediction
         padding_fn = functools.partial(preprocessor.pad_to_specific_size,
@@ -43,7 +48,7 @@ def create_evaluation_input(create_input_dict_fn,
                 input_dict, skip_labels=True, func_list=[padding_fn])
         processed_labels = tf.to_float(input_dict[dataset_builder._LABEL_FIELD])
 
-    processed_images = tf.to_float(output_dict[dataset_builder._IMAGE_FIELD])
+        processed_images = tf.to_float(output_dict[dataset_builder._IMAGE_FIELD])
     return processed_images, processed_labels
 
 
@@ -56,7 +61,16 @@ def create_predictions_and_labels(model, create_input_dict_fn,
     input_queue = prefetch_queue.prefetch_queue(eval_input_pair)
     eval_images, eval_labels = input_queue.dequeue()
     eval_labels = tf.expand_dims(eval_labels, 0)
-    eval_images = tf.expand_dims(eval_images, 0)
+    eval_images = tf.stack([eval_images, tf.image.flip_left_right(eval_images)])
+    #eval_images = tf.expand_dims(eval_images, 0)
+
+    if cropped_eval:
+        eval_images_orig = eval_images
+        c = int(eval_images.get_shape()[-1])
+        eval_images = sliding_window.extract_patches(eval_images, input_height, input_width)
+        patches_shape = tf.shape(eval_images)
+        eval_images = tf.reshape(eval_images, [tf.reduce_prod(patches_shape[0:3]), input_height, input_width, c])
+
     # Main predictions
     mean_subtracted_inputs = model.preprocess(eval_images)
     model.provide_groundtruth(eval_labels)
@@ -71,6 +85,22 @@ def create_predictions_and_labels(model, create_input_dict_fn,
             align_corners=True)
         output_dict[model.main_class_predictions_key] = padded_predictions
 
+    model_scores = output_dict[model.main_class_predictions_key]
+    model_scores = tf.split(model_scores, 2, 0)
+    model_scores[1] = tf.image.flip_left_right(model_scores[1])
+    model_scores = tf.reduce_mean(tf.stack(model_scores), 0)
+    output_dict[model.main_class_predictions_key] = model_scores
+    if cropped_eval:
+        target = tf.zeros(eval_labels.get_shape().as_list()[:-1] + model_scores.get_shape().as_list()[-1:])
+        print("Merging patches. Could take a while.")
+        model_scores = sliding_window.merge_patches(target, model_scores, input_height, input_width)
+        print("Done merging!")
+        output_dict[model.main_class_predictions_key] = model_scores
+    eval_predictions = tf.argmax(model_scores, 3)
+    eval_predictions = tf.expand_dims(eval_predictions, -1)
+
+
+
     # Output graph def for pruning
     if eval_dir is not None:
         graph_def = tf.get_default_graph().as_graph_def()
@@ -81,9 +111,7 @@ def create_predictions_and_labels(model, create_input_dict_fn,
     validation_losses = model.loss(output_dict)
     eval_total_loss =  sum(validation_losses.values())
     # Argmax final outputs to feed to a metric function
-    model_scores = output_dict[model.main_class_predictions_key]
-    eval_predictions = tf.argmax(model_scores, 3)
-    eval_predictions = tf.expand_dims(eval_predictions, -1)
+
 
     return eval_predictions, eval_labels, eval_images, eval_total_loss
 
