@@ -320,7 +320,7 @@ def train_segmentation_model(create_model_fn,
         summary_op = tf.summary.merge(list(summaries))
 
         session_config = tf.ConfigProto(
-            allow_soft_placement=True, log_device_placement=True)
+            allow_soft_placement=True, log_device_placement=False)
 
         #load_vars = [v for v in tf.global_variables() if "Dont_Load" not in v.op.name]
 
