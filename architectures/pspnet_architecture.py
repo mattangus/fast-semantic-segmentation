@@ -30,10 +30,12 @@ class PSPNetArchitecture(model.FastSegmentationModel):
                 num_classes,
                 feature_extractor,
                 classification_loss,
+                dist_loss,
                 filter_scale,
                 use_aux_loss=True,
                 main_loss_weight=1,
                 aux_loss_weight=0,
+                dist_loss_weight=0.01,
                 add_summaries=True,
                 scope=None,
                 scale_pred=False,
@@ -44,10 +46,12 @@ class PSPNetArchitecture(model.FastSegmentationModel):
         self._num_classes = num_classes
         self._feature_extractor = feature_extractor
         self._classification_loss = classification_loss
+        self._dist_loss = dist_loss
         self._filter_scale = filter_scale
         self._use_aux_loss = use_aux_loss
         self._main_loss_weight = main_loss_weight
         self._aux_loss_weight = aux_loss_weight
+        self._dist_loss_weight = dist_loss_weight
         self._add_summaries = add_summaries
         self._scale_pred = scale_pred
         self._train_reduce = train_reduce
@@ -71,6 +75,10 @@ class PSPNetArchitecture(model.FastSegmentationModel):
     @property
     def aux_loss_key(self):
         return 'aux_loss'
+    
+    @property
+    def dist_loss_key(self):
+        return 'dist_loss'
 
     def preprocess(self, inputs):
         if inputs.dtype is not tf.float32:
@@ -235,6 +243,12 @@ class PSPNetArchitecture(model.FastSegmentationModel):
                 losses_dict[self.aux_loss_key] = (
                     self._aux_loss_weight * first_aux_loss)
 
+        if self._dist_loss is not None and self._is_training:
+            final_logits = prediction_dict[self.final_logits_key]
+            with tf.name_scope('DistLoss'):
+                dist_loss = self._dist_loss(final_logits, main_scaled_labels)
+                losses_dict[self.dist_loss_key] = (
+                    self._dist_loss_weight * dist_loss)
 
         return losses_dict
 

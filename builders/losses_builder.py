@@ -62,6 +62,7 @@ def _focal_loss(logits, labels, ignore_label, gamma=2.0, alpha=0.25):
     # reduced_fl = tf.reduce_sum(fl, axis=1)  # same as reduce_max
     return tf.reduce_mean(reduced_fl * not_ignore_mask)
 
+
 def _l2norm(predictions, labels, ignore_label):
     return 0.5 * tf.reduce_mean(tf.squared_difference(labels, predictions))
 
