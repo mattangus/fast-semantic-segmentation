@@ -1,5 +1,5 @@
 from builders import hyperparams_builder
-from builders import losses_builder
+from builders import losses_builder, dist_builder
 from protos import model_pb2
 
 from extractors import pspnet_icnet_resnet_v1
@@ -56,6 +56,8 @@ def _build_pspnet_icnet_model(model_config, is_training, add_summaries,
     loss_config = model_config.loss
     classification_loss = (
             losses_builder.build(loss_config))
+    dist_loss = (
+            dist_builder.build(loss_config))
     use_aux_loss = loss_config.use_auxiliary_loss
 
     scale_predictions = model_config.scale_predictions #model_config.something
@@ -67,6 +69,7 @@ def _build_pspnet_icnet_model(model_config, is_training, add_summaries,
         'num_classes': num_classes,
         'feature_extractor': feature_extractor,
         'classification_loss': classification_loss,
+        'dist_loss': dist_loss,
         'use_aux_loss': use_aux_loss,
         'add_summaries': add_summaries,
         'scale_pred': scale_predictions,
@@ -92,6 +95,7 @@ def _build_pspnet_icnet_model(model_config, is_training, add_summaries,
             # TODO: remove hardcoded values here
             common_kwargs['main_loss_weight'] = 1.0
             common_kwargs['aux_loss_weight'] = 0.4
+            common_kwargs['dist_loss_weight'] = 0.01
         common_kwargs['train_reduce'] = model_config.train_reduce
         model = (num_classes, pspnet_architecture.PSPNetArchitecture(
             filter_scale=filter_scale,

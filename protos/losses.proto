@@ -6,6 +6,8 @@ message Loss {
 
     optional ClassificationLoss classification_loss = 1;
 
+    optional DistLoss dist_loss = 2;
+
     optional bool use_auxiliary_loss = 3 [default=false];
 
     optional uint32 ignore_label = 4 [default=255];
@@ -18,8 +20,17 @@ message ClassificationLoss {
     }
 }
 
+message DistLoss {
+    oneof loss_type {
+        BatchMomentLoss batch = 1;
+        NoLoss none = 2;
+    }
+}
+
 message SoftmaxClassificationLoss {}
 
 message FocalClassificationLoss {}
 
+message BatchMomentLoss {}
 
+message NoLoss {}
