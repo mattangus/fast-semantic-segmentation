@@ -147,6 +147,7 @@ def build(input_reader_config):
 
     if not reader_config.input_path or \
             not os.path.isfile(reader_config.input_path[0]):
+        import pdb; pdb.set_trace()
         raise ValueError('At least one input path must be specified in '
                          '`input_reader_config`.')
 
