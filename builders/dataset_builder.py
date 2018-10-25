@@ -28,85 +28,131 @@ _ITEMS_TO_DESCRIPTIONS = {
 }
 
 class Raw(tfexample_decoder.ItemHandler):
-  """An ItemHandler that decodes a parsed Tensor as an image."""
+    """An ItemHandler that decodes a parsed Tensor as an image."""
 
-  def __init__(self,
-               image_key=None,
-               format_key=None,
-               shape=None,
-               dtype=tf.uint8):
-    """Initializes the image.
+    def __init__(self,
+                image_key=None,
+                format_key=None,
+                shape=None,
+                dtype=tf.uint8):
+        """Initializes the image.
 
-    Args:
-      image_key: the name of the TF-Example feature in which the encoded image
-        is stored.
-      format_key: the name of the TF-Example feature in which the image format
-        is stored.
-      shape: the output shape of the image as 1-D `Tensor`
-        [height, width, channels]. If provided, the image is reshaped
-        accordingly. If left as None, no reshaping is done. A shape should
-        be supplied only if all the stored images have the same shape.
-      dtype: images will be decoded at this bit depth. Different formats
-        support different bit depths.
-    """
-    if not image_key:
-      image_key = 'image/encoded'
-    if not format_key:
-      format_key = 'image/format'
+        Args:
+        image_key: the name of the TF-Example feature in which the encoded image
+            is stored.
+        format_key: the name of the TF-Example feature in which the image format
+            is stored.
+        shape: the output shape of the image as 1-D `Tensor`
+            [height, width, channels]. If provided, the image is reshaped
+            accordingly. If left as None, no reshaping is done. A shape should
+            be supplied only if all the stored images have the same shape.
+        dtype: images will be decoded at this bit depth. Different formats
+            support different bit depths.
+        """
+        if not image_key:
+            image_key = 'image/encoded'
+        if not format_key:
+            format_key = 'image/format'
 
-    super(Raw, self).__init__([image_key, format_key])
-    self._image_key = image_key
-    self._format_key = format_key
-    self._shape = shape
-    self._dtype = dtype
+        super(Raw, self).__init__([image_key, format_key])
+        self._image_key = image_key
+        self._format_key = format_key
+        self._shape = shape
+        self._dtype = dtype
 
-  def tensors_to_item(self, keys_to_tensors):
-    """See base class."""
-    image_buffer = keys_to_tensors[self._image_key]
-    image_format = keys_to_tensors[self._format_key]
+    def tensors_to_item(self, keys_to_tensors):
+        """See base class."""
+        image_buffer = keys_to_tensors[self._image_key]
+        image_format = keys_to_tensors[self._format_key]
 
-    return self._decode(image_buffer, image_format)
+        return self._decode(image_buffer, image_format)
 
-  def _decode(self, image_buffer, image_format):
-    """Decodes the image buffer.
+    def _decode(self, image_buffer, image_format):
+        """Decodes the image buffer.
 
-    Args:
-      image_buffer: The tensor representing the encoded image tensor.
-      image_format: The image format for the image in `image_buffer`. If image
-        format is `raw`, all images are expected to be in this format, otherwise
-        this op can decode a mix of `jpg` and `png` formats.
+        Args:
+        image_buffer: The tensor representing the encoded image tensor.
+        image_format: The image format for the image in `image_buffer`. If image
+            format is `raw`, all images are expected to be in this format, otherwise
+            this op can decode a mix of `jpg` and `png` formats.
 
-    Returns:
-      A tensor that represents decoded image of self._shape, or
-      (?, ?, self._channels) if self._shape is not specified.
-    """
+        Returns:
+        A tensor that represents decoded image of self._shape, or
+        (?, ?, self._channels) if self._shape is not specified.
+        """
 
-    def decode_raw():
-      """Decodes a raw image."""
-      return parsing_ops.decode_raw(image_buffer, out_type=self._dtype)
+        def decode_raw():
+            """Decodes a raw image."""
+            return parsing_ops.decode_raw(image_buffer, out_type=self._dtype)
 
-    image = decode_raw()
+        image = decode_raw()
 
-    if self._shape is not None:
-      image = tf.reshape(image, self._shape)
+        if self._shape is not None:
+            image = tf.reshape(image, self._shape)
 
-    return image
+        return image
+
+class ImageFile(tfexample_decoder.ItemHandler):
+    """An ItemHandler that decodes a parsed Tensor as an image."""
+
+    def __init__(self,
+                filename_key=None,
+                shape=None,
+                dtype=tf.uint8):
+        """Initializes the image.
+
+        Args:
+        image_key: the name of the TF-Example feature in which the encoded image
+            is stored.
+        format_key: the name of the TF-Example feature in which the image format
+            is stored.
+        shape: the output shape of the image as 1-D `Tensor`
+            [height, width, channels]. If provided, the image is reshaped
+            accordingly. If left as None, no reshaping is done. A shape should
+            be supplied only if all the stored images have the same shape.
+        dtype: images will be decoded at this bit depth. Different formats
+            support different bit depths.
+        """
+        if not filename_key:
+            filename_key = 'image/filename'
+
+        super(ImageFile, self).__init__([filename_key])
+        self._filename_key = filename_key
+        self._shape = shape
+        self._dtype = dtype
+
+    def tensors_to_item(self, keys_to_tensors):
+        """See base class."""
+        filename = keys_to_tensors[self._filename_key]
+        img = self.filename_to_image(filename, 3)
+        img.set_shape(list(self._shape[:-1]) + [3])
+        if self._shape[-1] == 1:
+            img = img[:,:,0:1]
+        return img
+
+    def filename_to_image(self, filename, channels, name=None):
+        return tf.image.decode_image(tf.read_file(filename), channels=channels, name=name)
 
 def _create_tf_example_decoder(input_reader_config):
 
     keys_to_features = {
-        'image/encoded':
-            tf.FixedLenFeature((), tf.string, default_value=''),
+        # 'image/encoded':
+        #     tf.FixedLenFeature((), tf.string, default_value=''),
         'image/format':
             tf.FixedLenFeature((), tf.string, default_value='jpeg'),
         'image/filename':
             tf.FixedLenFeature((), tf.string, default_value=''),
-        'image/height':
-            tf.FixedLenFeature((), tf.int64, default_value=0),
-        'image/width':
-            tf.FixedLenFeature((), tf.int64, default_value=0),
-        'image/segmentation/class/encoded':
+        # 'image/height':
+        #     tf.FixedLenFeature((), tf.int64, default_value=0),
+        # 'image/width':
+        #     tf.FixedLenFeature((), tf.int64, default_value=0),
+        # 'image/segmentation/class/encoded':
+        #     tf.FixedLenFeature((), tf.string, default_value=''),
+        # 'image/segmentation/class/format':
+        #     tf.FixedLenFeature((), tf.string, default_value='png'),
+        'image/segmentation/filename':
             tf.FixedLenFeature((), tf.string, default_value=''),
+        # 'image/segmentation/class/encoded': _bytes_feature(encoded_label.tostring()),
         'image/segmentation/class/format':
             tf.FixedLenFeature((), tf.string, default_value='png'),
     }
@@ -114,22 +160,32 @@ def _create_tf_example_decoder(input_reader_config):
     height = input_reader_config.height
     width = input_reader_config.width
 
-    input_image = tfexample_decoder.Image(
-        image_key='image/encoded',
-        format_key='image/format',
-        shape=(height, width, 3), # CITYSCAPES SPECIFIC
-        channels=3)
-    ground_truth_image = tfexample_decoder.Image(
-        image_key='image/segmentation/class/encoded',
-        format_key='image/segmentation/class/format',
-        shape=(height, width, 1), # CITYSCAPES SPECIFIC
-        channels=1)
+    # input_image = filename_to_image(tfexample_decoder.Tensor('image/filename'), 3)
+    # ground_truth_image = filename_to_image(tfexample_decoder.Tensor('image/segmentation/filename'), 3)
+
+    input_image = ImageFile(
+        filename_key='image/filename',
+        shape=(height, width, 3))
+    ground_truth_image = ImageFile(
+        filename_key='image/segmentation/filename',
+        shape=(height, width, 1))
+
+    # input_image = tfexample_decoder.Image(
+    #     image_key='image/encoded',
+    #     format_key='image/format',
+    #     shape=(height, width, 3), # CITYSCAPES SPECIFIC
+    #     channels=3)
+    # ground_truth_image = tfexample_decoder.Image(
+    #     image_key='image/segmentation/class/encoded',
+    #     format_key='image/segmentation/class/format',
+    #     shape=(height, width, 1), # CITYSCAPES SPECIFIC
+    #     channels=1)
 
     items_to_handlers = {
         _IMAGE_FIELD: input_image,
         _IMAGE_NAME_FIELD: tfexample_decoder.Tensor('image/filename'),
-        _HEIGHT_FIELD: tfexample_decoder.Tensor('image/height'),
-        _WIDTH_FIELD: tfexample_decoder.Tensor('image/width'),
+        # _HEIGHT_FIELD: tfexample_decoder.Tensor('image/height'),
+        # _WIDTH_FIELD: tfexample_decoder.Tensor('image/width'),
         _LABEL_FIELD: ground_truth_image,
     }
     
@@ -172,13 +228,15 @@ def build(input_reader_config):
             shuffle=input_reader_config.shuffle,
             seed=_DATASET_SHUFFLE_SEED)
 
-        (image, image_name, height, width, label) = provider.get([_IMAGE_FIELD,
-            _IMAGE_NAME_FIELD, _HEIGHT_FIELD, _WIDTH_FIELD, _LABEL_FIELD])
-
+        (image, image_name, label) = provider.get([_IMAGE_FIELD,
+            _IMAGE_NAME_FIELD,
+            #_HEIGHT_FIELD, _WIDTH_FIELD,
+            _LABEL_FIELD])
+    
     return {
         _IMAGE_FIELD: image,
         _IMAGE_NAME_FIELD: image_name,
-        _HEIGHT_FIELD: height,
-        _WIDTH_FIELD: width,
+        # _HEIGHT_FIELD: height,
+        # _WIDTH_FIELD: width,
         _LABEL_FIELD: label,
     }
