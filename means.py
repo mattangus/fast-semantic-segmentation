@@ -8,27 +8,30 @@ from mpl_toolkits.mplot3d import Axes3D
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--mean", type=str, required=True)
-parser.add_argument("--cov_inv", type=str, required=True)
+parser.add_argument("--cov_inv", type=str, default=None)
 #parser.add_argument("--output", type=str, required=True)
 
 args = parser.parse_args()
 
 mean = np.load(args.mean)
-cov_inv = np.load(args.cov_inv)
 if "npz" in args.mean:
     mean = mean["arr_0"]
-if "npz" in args.cov_inv:
-    cov_inv = cov_inv["arr_0"]
-
+if args.cov_inv:
+    cov_inv = np.load(args.cov_inv)
+    if "npz" in args.cov_inv:
+        cov_inv = cov_inv["arr_0"]
+else:
+    cov_inv = None
 mean = np.swapaxes(mean, 3, 0)
-cov_inv = np.swapaxes(cov_inv, 3, 0)
+if cov_inv:
+    cov_inv = np.swapaxes(cov_inv, 3, 0)
 num_class = mean.shape[0]
 
 #mean = np.reshape(mean, [num_class, -1])
 
 cm = np.zeros([num_class, num_class])
 
-def dist_fn(m, cov_inv, p):
+def mahal(m, cov_inv, p):
     temp = p - m
     cov_inv = np.squeeze(cov_inv)
 
@@ -36,9 +39,18 @@ def dist_fn(m, cov_inv, p):
     dist = dist = np.squeeze(np.matmul(left, np.transpose(temp, [0,1,3,2])))
     return np.mean(dist)
 
+def l2_norm(m, unused, p):
+    return np.sqrt(np.sum(np.square(m-p)))
+
+if cov_inv:
+    dist_fn = mahal
+else:
+    dist_fn = l2_norm
+
 for i in range(num_class):
     for j in range(num_class):
-        cm[i,j] = dist_fn(mean[i], cov_inv[i], mean[j])
+        cur_cov = cov_inv[i] if cov_inv else None
+        cm[i,j] = dist_fn(mean[i], cur_cov, mean[j])
         #cm[j,i] = cm[i,j]
 
 xticklabels = ['road','sidewalk','building','wall','fence','pole','traffic light',

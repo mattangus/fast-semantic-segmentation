@@ -10,8 +10,8 @@ message InputReader {
     optional uint32 num_readers = 5 [default=32];
     optional TFRecordInputReader tf_record_input_reader = 6;
     optional uint32 num_examples = 7;
-    optional uint32 height = 8;
-    optional uint32 width = 9;
+    required uint32 height = 8;
+    required uint32 width = 9;
 }
 
 message TFRecordInputReader {
