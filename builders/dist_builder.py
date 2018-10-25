@@ -28,7 +28,8 @@ def _max_dist_batch(logits, labels, ignore_label):
     resized = tf.image.resize_nearest_neighbor(one_hot, logits.get_shape().as_list()[1:-1])
     sorted_feats = logits*resized
     means = tf.reduce_mean(sorted_feats, axis=0, keepdims=True) #covs = _moments(sorted_feats)
-    loss = -tf.reduce_mean(tf.square(tf.expand_dims(means, -1) - tf.expand_dims(means, -2)))
+    n = 6.0**2
+    loss = n/(n + tf.reduce_mean(tf.square(tf.expand_dims(means, -1) - tf.expand_dims(means, -2))))
     return loss
 
 def build(loss_config):

@@ -35,7 +35,7 @@ class PSPNetArchitecture(model.FastSegmentationModel):
                 use_aux_loss=True,
                 main_loss_weight=1,
                 aux_loss_weight=0,
-                dist_loss_weight=0.01,
+                dist_loss_weight=1,
                 add_summaries=True,
                 scope=None,
                 scale_pred=False,

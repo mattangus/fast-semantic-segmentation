@@ -2,6 +2,7 @@ import os
 import functools
 import tensorflow as tf
 from tensorflow.python.ops import parsing_ops
+import random
 
 from protos import input_reader_pb2
 
@@ -13,7 +14,7 @@ dataset = slim.dataset
 
 dataset_data_provider = slim.dataset_data_provider
 
-_DATASET_SHUFFLE_SEED = 7
+_DATASET_SHUFFLE_SEED = random.randint(-(2**32-1),2**32-1)#7
 
 _IMAGE_FIELD            = 'image'
 _IMAGE_NAME_FIELD       = 'image_name'

@@ -210,8 +210,9 @@ def eval_segmentation_model(create_model_fn,
     # update_op = [update_op, conf_update]
     metrics_to_values, metrics_to_updates = (
         tf.contrib.metrics.aggregate_metric_map(metric_map))
-    # for metric_name, metric_value in six.iteritems(metrics_to_values):
-    #     tf.summary.scalar(metric_name,  metric_value)
+    for metric_name, metric_value in six.iteritems(metrics_to_values):
+        if "mIoU" in metric_name:
+            tf.summary.scalar(metric_name,  metric_value)
     eval_op = list(metrics_to_updates.values())
 
     # Summaries for Tensorboard
@@ -257,7 +258,7 @@ def eval_segmentation_model(create_model_fn,
                             eval_op=eval_op,
                             final_op=value_op,
                             summary_op=summary_op,
-                            timeout=0,
+                            #timeout=0,
                             variables_to_restore=variables_to_restore)
         
         tf.logging.info('Evaluation over. Eval values: {}'.format(
