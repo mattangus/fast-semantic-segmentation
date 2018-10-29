@@ -29,7 +29,7 @@ def _max_dist_batch(logits, labels, ignore_label):
     sorted_feats = logits*resized
     means = tf.reduce_mean(sorted_feats, axis=0, keepdims=True) #covs = _moments(sorted_feats)
     n = 6.0**2
-    loss = n/(n + tf.reduce_mean(tf.square(tf.expand_dims(means, -1) - tf.expand_dims(means, -2))))
+    loss = tf.reduce_mean(n/(n + tf.square(tf.expand_dims(means, -1) - tf.expand_dims(means, -2))))
     return loss
 
 def build(loss_config):

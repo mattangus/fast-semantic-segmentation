@@ -10,7 +10,7 @@ message Loss {
 
     optional bool use_auxiliary_loss = 3 [default=false];
 
-    optional uint32 ignore_label = 4 [default=255];
+    repeated uint32 ignore_label = 4;
 }
 
 message ClassificationLoss {

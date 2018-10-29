@@ -11,6 +11,7 @@ import os
 import numpy as np
 import PIL.Image
 import cv2
+import random
 
 import tensorflow as tf
 
@@ -24,6 +25,7 @@ tf.flags.DEFINE_string('cityscapes_dir', '',
 tf.flags.DEFINE_string('split_type', '',
                        'Type of split: `train`, `test` or `val`.')
 tf.flags.DEFINE_string('output_dir', '', 'Output data directory.')
+tf.flags.DEFINE_string('name', '', 'output name.')
 
 tf.flags.DEFINE_list('resize', None, 'w,h to resize to')
 
@@ -109,6 +111,7 @@ def create_tf_example(image_path, label_path, image_dir='', is_jpeg=False):
 def _create_tf_record(images, labels, output_path):
     options = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.GZIP)
     writer = tf.python_io.TFRecordWriter(output_path, options=options)
+    images, labels = zip(*random.sample(list(zip(images, labels)), len(images)))
     for idx, image in enumerate(images):
         if idx % 100 == 0:
             tf.logging.info('On image %d of %d', idx, len(images))
@@ -122,6 +125,7 @@ def _create_tf_record(images, labels, output_path):
 def main(_):
     assert FLAGS.output_dir, '`output_dir` missing.'
     assert FLAGS.split_type, '`split_type` missing.'
+    assert FLAGS.name, "`name` missing"
     assert (FLAGS.cityscapes_dir) or \
            (FLAGS.input_pattern and FLAGS.annot_pattern), \
            'Must specify either `cityscapes_dir` or ' \
@@ -130,7 +134,7 @@ def main(_):
     if not tf.gfile.IsDirectory(FLAGS.output_dir):
         tf.gfile.MakeDirs(FLAGS.output_dir)
     train_output_path = os.path.join(FLAGS.output_dir,
-        'cityscapes_{}.record'.format(FLAGS.split_type))
+        '{}_{}.record'.format(FLAGS.name, FLAGS.split_type))
 
     if FLAGS.cityscapes_dir:
         search_image_files = os.path.join(FLAGS.cityscapes_dir,

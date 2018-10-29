@@ -17,6 +17,7 @@ from builders import optimizer_builder
 import queue
 
 from tensorflow.contrib import graph_editor as ge
+from tensorflow.contrib.memory_stats.python.ops.memory_stats_ops import BytesInUse
 
 slim = tf.contrib.slim
 
@@ -55,8 +56,9 @@ def create_training_input(create_input_fn,
 
 
 def create_training_model_losses(input_queue, create_model_fn, train_config,
-                                 train_dir=None, gradient_checkpoints=None):
+                                 train_dir=None, gradient_checkpoints=None, clone_scope=None):
 
+    tf.logging.info('Creating clone %s', clone_scope)
     _, segmentation_model = create_model_fn()
 
     # Optional quantization
@@ -70,8 +72,10 @@ def create_training_model_losses(input_queue, create_model_fn, train_config,
         images = read_data[dataset_builder._IMAGE_FIELD]
         labels = read_data[dataset_builder._LABEL_FIELD]
         return (images, labels)
-    
+
     (images, labels) = zip(*map(extract_images_and_targets, [read_data_list]))
+    
+    #labels = tf.Print(labels, ["labels max", tf.reduce_max(labels)])
 
     # Incase we need to do zero centering, we do it here
     preprocessed_images = []
@@ -90,7 +94,7 @@ def create_training_model_losses(input_queue, create_model_fn, train_config,
         graph = tf.get_default_graph()
         checkpoint_list = gradient_checkpoints
         for checkpoint_node_name in checkpoint_list:
-            curr_tensor_name = checkpoint_node_name + ":0"
+            curr_tensor_name = clone_scope + checkpoint_node_name + ":0"
             node = graph.get_tensor_by_name(curr_tensor_name)
             tf.add_to_collection('checkpoints', node)
 
@@ -163,7 +167,7 @@ def train_segmentation_model(create_model_fn,
         num_ps_tasks=num_ps_tasks)
     startup_delay_steps = task * startup_delay_steps
 
-    per_clone_batch_size = train_config.batch_size // num_clones
+    per_clone_batch_size = train_config.batch_size #// num_clones
 
     preprocess_fn = None
     if train_config.preprocessor_step:
@@ -227,8 +231,8 @@ def train_segmentation_model(create_model_fn,
                     tf.summary.scalar(var.op.name, var, family='LearningRate'))
 
         # Add summaries for model variables.
-        for model_var in slim.get_model_variables():
-            summaries.add(tf.summary.histogram(model_var.op.name, model_var))
+        # for model_var in slim.get_model_variables():
+        #     summaries.add(tf.summary.histogram(model_var.op.name, model_var))
 
         # Fine tune from classification or segmentation checkpoints
         trainable_vars = tf.get_collection(
@@ -328,13 +332,18 @@ def train_segmentation_model(create_model_fn,
         # Save checkpoints regularly.
         saver = tf.train.Saver(max_to_keep=max_checkpoints_to_keep)
 
+        gpu_mems = []
+        for i in range(num_clones):
+            with tf.device("/gpu:"+str(i)):
+                gpu_mems.append(tf.cast(BytesInUse(), tf.float32)/float(1024*1024))
+
         # HACK to see memory usage.
         # TODO: Clean up, pretty messy.
         def train_step_mem(sess, train_op, global_step, train_step_kwargs):
             start_time = time.time()
             run_metadata = tf.RunMetadata()
             options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-            total_loss, np_global_step = sess.run([train_op, global_step],
+            total_loss, np_global_step, mem = sess.run([train_op, global_step, gpu_mems],
                                         options=options,
                                         run_metadata=run_metadata)
             time_elapsed = time.time() - start_time
@@ -346,8 +355,13 @@ def train_segmentation_model(create_model_fn,
                         np_global_step, total_loss, time_elapsed)
 
             if log_memory:
-                mem_use = mem_util.peak_memory(run_metadata)['/gpu:0']/1e6
-                tf.logging.info('Memory used: %.2f MB',(mem_use))
+                peaks = mem_util.peak_memory(run_metadata)
+                for mem_use in peaks:
+                # mem_use = mem_util.peak_memory(run_metadata)['/gpu:0']/1e6
+                    if "/gpu" in mem_use:
+                        tf.logging.info('Memory used (%s): %.2f MB', mem_use, peaks[mem_use]/1e6)
+                # for m in mem:
+                #     tf.logging.info('Memory used: %.2f MB',(m))
 
             if 'should_stop' in train_step_kwargs:
                 should_stop = sess.run(train_step_kwargs['should_stop'])

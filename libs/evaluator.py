@@ -182,10 +182,15 @@ def eval_segmentation_model(create_model_fn,
     # Prepare inputs to metric calculation steps
     flattened_predictions = tf.reshape(predictions_for_eval, shape=[-1])
     flattened_labels = tf.reshape(labels_for_eval, shape=[-1])
-    validity_mask = tf.equal(flattened_labels, ignore_label)
-    neg_validity_mask = tf.not_equal(flattened_labels, ignore_label)
-    eval_labels = tf.where(validity_mask, tf.zeros_like(
-            flattened_labels), flattened_labels)
+
+    ne = [tf.not_equal(flattened_labels, il) for il in ignore_label]
+    neg_validity_mask = ne.pop(0)
+    for v in ne:
+        neg_validity_mask = tf.logical_and(neg_validity_mask, v)
+    #validity_mask = tf.logical_not(neg_validity_mask) #tf.equal(flattened_labels, ignore_label)
+    #neg_validity_mask = tf.not_equal(flattened_labels, ignore_label)
+    eval_labels = tf.where(neg_validity_mask, flattened_labels,
+                        tf.zeros_like(flattened_labels))
     # Calculate metrics from predictions
     metric_map = {}
     predictions_tag='EvalMetrics/mIoU'
@@ -258,7 +263,7 @@ def eval_segmentation_model(create_model_fn,
                             eval_op=eval_op,
                             final_op=value_op,
                             summary_op=summary_op,
-                            #timeout=0,
+                            timeout=0,
                             variables_to_restore=variables_to_restore)
         
         tf.logging.info('Evaluation over. Eval values: {}'.format(

@@ -27,8 +27,6 @@ if cov_inv:
     cov_inv = np.swapaxes(cov_inv, 3, 0)
 num_class = mean.shape[0]
 
-#mean = np.reshape(mean, [num_class, -1])
-
 cm = np.zeros([num_class, num_class])
 
 def mahal(m, cov_inv, p):
@@ -70,6 +68,7 @@ c = [(128, 64,128),(244, 35,232),( 70, 70, 70),(102,102,156),(190,153,153),(153,
     (  0, 80,100),(  0,  0,230),(119, 11, 32)]
 c = np.array(c)/255
 
+mean = np.reshape(mean, [num_class, -1])
 
 pca = PCA(n_components=3)
 tformed = pca.fit_transform(mean)

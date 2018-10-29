@@ -125,14 +125,14 @@ class ImageFile(tfexample_decoder.ItemHandler):
     def tensors_to_item(self, keys_to_tensors):
         """See base class."""
         filename = keys_to_tensors[self._filename_key]
-        img = self.filename_to_image(filename, 3)
-        img.set_shape(list(self._shape[:-1]) + [3])
-        if self._shape[-1] == 1:
-            img = img[:,:,0:1]
+        # filename = tf.Print(filename, [filename])
+        img = self.filename_to_image(filename, self._shape[-1])
+        img.set_shape(self._shape)
+        
         return img
 
     def filename_to_image(self, filename, channels, name=None):
-        return tf.image.decode_image(tf.read_file(filename), channels=channels, name=name)
+        return tf.image.decode_png(tf.read_file(filename), channels=channels, name=name)
 
 def _create_tf_example_decoder(input_reader_config):
 
@@ -142,7 +142,7 @@ def _create_tf_example_decoder(input_reader_config):
         'image/format':
             tf.FixedLenFeature((), tf.string, default_value='jpeg'),
         'image/filename':
-            tf.FixedLenFeature((), tf.string, default_value=''),
+            tf.FixedLenFeature((), tf.string),
         # 'image/height':
         #     tf.FixedLenFeature((), tf.int64, default_value=0),
         # 'image/width':
@@ -152,7 +152,7 @@ def _create_tf_example_decoder(input_reader_config):
         # 'image/segmentation/class/format':
         #     tf.FixedLenFeature((), tf.string, default_value='png'),
         'image/segmentation/filename':
-            tf.FixedLenFeature((), tf.string, default_value=''),
+            tf.FixedLenFeature((), tf.string),
         # 'image/segmentation/class/encoded': _bytes_feature(encoded_label.tostring()),
         'image/segmentation/class/format':
             tf.FixedLenFeature((), tf.string, default_value='png'),
@@ -227,13 +227,15 @@ def build(input_reader_config):
             num_epochs=(input_reader_config.num_epochs
                 if input_reader_config.num_epochs else None),
             shuffle=input_reader_config.shuffle,
+            common_queue_capacity=3000,
             seed=_DATASET_SHUFFLE_SEED)
+        print("shuffle seed:", _DATASET_SHUFFLE_SEED)
 
         (image, image_name, label) = provider.get([_IMAGE_FIELD,
             _IMAGE_NAME_FIELD,
             #_HEIGHT_FIELD, _WIDTH_FIELD,
             _LABEL_FIELD])
-    
+    # label = tf.Print(label, ["label max", tf.reduce_max(label)])
     return {
         _IMAGE_FIELD: image,
         _IMAGE_NAME_FIELD: image_name,

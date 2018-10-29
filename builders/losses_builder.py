@@ -11,17 +11,34 @@ def _softmax_classification_loss(predictions, labels, ignore_label):
     one_hot_target = tf.contrib.slim.one_hot_encoding(
                             tf.cast(flattened_labels, tf.int32),
                             num_classes, on_value=1.0, off_value=0.0)
-    ne = tf.not_equal(flattened_labels, ignore_label)
-    not_ignore_mask = tf.to_float(ne)
+    # not_ignore_mask = tf.reduce_sum(one_hot_target, -1)
+    ne = [tf.not_equal(flattened_labels, il) for il in ignore_label]
+    ne = [tf.to_float(v) for v in ne]
+    # ne_sums = [tf.reduce_sum(v) for v in ne]
+    not_ignore_mask = ne.pop(0)
+    for v in ne:
+        not_ignore_mask = tf.multiply(not_ignore_mask, v)
+    #tf.summary.image("not_ignore_mask", tf.reshape(not_ignore_mask, tf.shape(labels)))
 
     #uncomment the follwoing to debug if one_hot contains invalid values
     #(i.e. a vec like [0,0,0,...]) the value of num_act should be 0
-    
-    # ignore_mask = tf.to_float(tf.logical_not(ne))
+
+    # ignore_mask = 1 - not_ignore_mask #tf.to_float(tf.logical_not(ne))
     # eq_count = tf.reduce_sum(ignore_mask)
     # ne_count = tf.reduce_sum(not_ignore_mask)
+    # max_val = tf.reduce_max(flattened_labels*not_ignore_mask)
+    # not_max_val = tf.reduce_max(flattened_labels*ignore_mask)
+    # z_max_val = tf.reduce_max(flattened_labels*ignore_mask*not_ignore_mask)
     # num_act = tf.reduce_sum(tf.to_float(tf.equal(tf.reduce_sum(one_hot_target, -1), 0)) * not_ignore_mask)
-    # one_hot_target = tf.Print(one_hot_target, ["num_act:", num_act, "eq_count:", eq_count, "ne_count:", ne_count])
+    # one_hot_target = tf.Print(one_hot_target,
+    #         ["num_act:", num_act,
+    #          "eq_count:", eq_count,
+    #          "ne_count:", ne_count,
+    #          "max:", max_val,
+    #          "zero:", z_max_val,
+    #          "not_max", not_max_val,
+    #          "ig_max", tf.reduce_max(ignore_mask),
+    #          "nig_max", tf.reduce_max(not_ignore_mask)])
 
     return tf.losses.softmax_cross_entropy(
                     one_hot_target,
