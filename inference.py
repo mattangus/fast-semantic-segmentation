@@ -161,9 +161,8 @@ def compute_stats(m_km1, v_km1_inv, x_k, k, first_pass):
 def process_annot(pred_shape, feat, num_classes):
     annot_place = tf.placeholder(tf.uint8, pred_shape[:-1], "annot_in")
     one_hot = tf.one_hot(annot_place, num_classes)
-    resized = tf.expand_dims(tf.image.resize_nearest_neighbor(one_hot, feat.get_shape().as_list()[1:-1]), -1)
+    resized = tf.expand_dims(tf.image.resize_bilinear(one_hot, feat.get_shape().as_list()[1:-1]), -1)
     sorted_feats = tf.expand_dims(feat, -2)*resized
-    #import pdb; pdb.set_trace()
     return annot_place, sorted_feats
 
 def run_inference_graph(model, trained_checkpoint_prefix,

@@ -93,7 +93,6 @@ def gradients(ys, xs, grad_ys=None, checkpoints='collection', **kwargs):
             checkpoints = ge.filter_ts_from_regex(fwd_ops, 'conv2d|Conv|MatMul')
 
         elif checkpoints == 'memory':
-
             # remove very small tensors and some weird ops
             def fixdims(t): # tf.Dimension values are not compatible with int, convert manually
                 try:
@@ -151,7 +150,6 @@ def gradients(ys, xs, grad_ys=None, checkpoints='collection', **kwargs):
             else:
                 step = int(np.ceil(len(bottleneck_ts) / np.sqrt(N)))
                 checkpoints = sorted_bottlenecks[step::step]
-
         else:
             raise Exception('%s is unsupported input for "checkpoints"' % (checkpoints,))
 

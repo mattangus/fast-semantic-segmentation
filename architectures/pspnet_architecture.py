@@ -109,7 +109,10 @@ class PSPNetArchitecture(model.FastSegmentationModel):
                 # with tf.variable_scope(load_scope):
                 predictions = slim.conv2d(final_logits, self._num_classes,
                         1, 1, activation_fn=None, normalizer_fn=None)
-                predictions_no_resize = predictions
+                if self._train_reduce:
+                    predictions_no_resize = final_logits
+                else:
+                    predictions_no_resize = predictions
                 if not self._is_training: # evaluation
                     predictions = self._dynamic_interpolation(
                             predictions, z_factor=8.0)
@@ -242,7 +245,7 @@ class PSPNetArchitecture(model.FastSegmentationModel):
                                                         aux_scaled_labels)
                 losses_dict[self.aux_loss_key] = (
                     self._aux_loss_weight * first_aux_loss)
-
+        
         if self._dist_loss is not None and self._is_training:
             final_logits = prediction_dict[self.final_logits_key]
             with tf.name_scope('DistLoss'):

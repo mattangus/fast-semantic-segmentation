@@ -57,7 +57,7 @@ def _build_pspnet_icnet_model(model_config, is_training, add_summaries,
     classification_loss = (
             losses_builder.build(loss_config))
     dist_loss = (
-            dist_builder.build(loss_config))
+            dist_builder.build(loss_config, num_classes))
     use_aux_loss = loss_config.use_auxiliary_loss
 
     scale_predictions = model_config.scale_predictions #model_config.something

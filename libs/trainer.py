@@ -5,11 +5,13 @@ from __future__ import print_function
 import functools
 import time
 import tensorflow as tf
+import numpy as np
 
 from third_party import model_deploy
 from third_party import mem_util
 
 from builders import model_builder
+from builders import dist_builder
 from builders import dataset_builder
 from builders import preprocessor_builder
 from builders import optimizer_builder
@@ -135,6 +137,35 @@ def do_back(op):
     import pdb; pdb.set_trace()
     print("done")
 
+def my_add_check_numerics_ops():
+    """Connect a `check_numerics` to every floating point tensor.
+    `check_numerics` operations themselves are added for each `half`, `float`,
+    or `double` tensor in the graph. For all ops in the graph, the
+    `check_numerics` op for all of its (`half`, `float`, or `double`) inputs
+    is guaranteed to run before the `check_numerics` op on any of its outputs.
+    Note: This API is not compatible with the use of `tf.cond` or
+    `tf.while_loop`, and will raise a `ValueError` if you attempt to call it
+    in such a graph.
+    Returns:
+        A `group` op depending on all `check_numerics` ops added.
+    """
+    from tensorflow.python.framework import ops
+    from tensorflow.python.ops import control_flow_ops
+    check_op = []
+    # This code relies on the ordering of ops in get_operations().
+    # The producer of a tensor always comes before that tensor's consumer in
+    # this list. This is true because get_operations() returns ops in the order
+    # added, and an op can only be added after its inputs are added.
+    for op in ops.get_default_graph().get_operations():
+        for output in op.outputs:
+            if output.dtype in [tf.float16, tf.float32, tf.float64]:
+                message = op.name + ":" + str(output.value_index)
+                if op._get_control_flow_context() is not None:  # pylint: disable=protected-access
+                    print("not adding numerics check for", message)
+                else:
+                    with ops.control_dependencies(check_op):
+                        check_op = [tf.check_numerics(output, message=message)]
+    return control_flow_ops.group(*check_op)
 
 def train_segmentation_model(create_model_fn,
                              create_input_fn,
@@ -280,17 +311,17 @@ def train_segmentation_model(create_model_fn,
                 clones, training_optimizer,
                 regularization_losses=reg_losses,
                 var_list=trainable_vars)
-            total_loss = tf.check_numerics(total_loss,
-                                          'LossTensor is inf or nan.')
+            # total_loss = tf.check_numerics(total_loss,
+            #                               'total_loss is inf or nan.')
             summaries.add(
                 tf.summary.scalar('Losses/TotalLoss', total_loss))
-
+            grads_and_vars = [(tf.clip_by_norm(grad, 1.), var) for grad, var in grads_and_vars]
             grad_updates = training_optimizer.apply_gradients(grads_and_vars,
                                                     global_step=global_step)
             update_ops.append(grad_updates)
             update_op = tf.group(*update_ops, name='update_barrier')
             with tf.control_dependencies([update_op]):
-                train_op = tf.identity(total_loss, name='train_op')
+                    train_op = tf.identity(total_loss, name='train_op')
 
         # TODO: this ideally should not be hardcoded like this.
         #   should have a way to access the prediction and GT tensor
@@ -341,12 +372,22 @@ def train_segmentation_model(create_model_fn,
         # TODO: Clean up, pretty messy.
         def train_step_mem(sess, train_op, global_step, train_step_kwargs):
             start_time = time.time()
-            run_metadata = tf.RunMetadata()
-            options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-            total_loss, np_global_step, mem = sess.run([train_op, global_step, gpu_mems],
+            if log_memory:
+                run_metadata = tf.RunMetadata()
+                options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+            else:
+                run_metadata = None
+                options = None
+            total_loss, np_global_step, mem, cur_gvs, dbg = sess.run([train_op, global_step, gpu_mems, grads_and_vars, dist_builder.DEBUG],
                                         options=options,
                                         run_metadata=run_metadata)
             time_elapsed = time.time() - start_time
+
+            # vals = [np.all(np.isfinite(np.array(v))) for v in cur_gvs]
+            # from pprint import pprint
+            # pprint([(g[1], v) for g,v in zip(grads_and_vars, vals)])
+            # diffs, sq_dist, dist, lin_inv, loss = dbg
+            # import pdb; pdb.set_trace()
 
             if 'should_log' in train_step_kwargs:
                 if sess.run(train_step_kwargs['should_log']):

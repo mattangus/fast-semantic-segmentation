@@ -3,6 +3,8 @@ import tensorflow as tf
 import numpy as np
 from protos import losses_pb2
 
+DEBUG = []
+
 def _moments(x):
     static_shape = x.get_shape().as_list()
     dyn_shape = tf.shape(x)
@@ -22,17 +24,40 @@ def _moments(x):
     cov_xx = vx - mx
     return tf.reshape(mean_x, final_shape), tf.reshape(cov_xx, final_shape)
 
-def _max_dist_batch(logits, labels, ignore_label):
-    num_classes = logits.get_shape().as_list()[-1]
-    one_hot = tf.squeeze(tf.one_hot(tf.cast(labels, tf.int32), num_classes), 3)
-    resized = tf.image.resize_nearest_neighbor(one_hot, logits.get_shape().as_list()[1:-1])
-    sorted_feats = logits*resized
-    means = tf.reduce_mean(sorted_feats, axis=0, keepdims=True) #covs = _moments(sorted_feats)
-    n = 6.0**2
-    loss = tf.reduce_mean(n/(n + tf.square(tf.expand_dims(means, -1) - tf.expand_dims(means, -2))))
-    return loss
+def safe_f(x, f, safe_f=tf.zeros_like, safe_x=tf.ones_like, cmp=lambda x: tf.not_equal(x, 0.)):
+    x_ok = cmp(x)
+    safe_x = tf.where(x_ok, x, safe_x(x))
+    return tf.where(x_ok, f(safe_x), safe_f(x))
 
-def build(loss_config):
+def _max_dist_batch(logits, labels, ignore_label, num_classes):
+    one_hot = tf.squeeze(tf.one_hot(tf.cast(labels, tf.int32), num_classes), 3)
+    #TODO: try bilinear resize!
+    resized = tf.expand_dims(tf.image.resize_nearest_neighbor(one_hot, logits.get_shape().as_list()[1:-1]),-2)
+    sorted_feats = tf.expand_dims(logits, -1)*resized
+    means = tf.reduce_mean(sorted_feats, axis=0) #covs = _moments(sorted_feats)
+    n = 1.0
+    eye = tf.eye(num_classes)
+    diffs = tf.expand_dims(means, -1) - tf.expand_dims(means, -2)
+    #not 100% sure why adding to diag makes d/d(dot) sqrt(dot) non nan
+    sq_dist = tf.square(diffs)
+    dot = tf.reduce_sum(sq_dist, -3)
+    dist = safe_f(dot, tf.sqrt, safe_x=tf.zeros_like, cmp=lambda x: tf.greater(x,0.))
+    #lin_inv = tf.maximum(0., 100. - dist)
+    dist_inv = safe_f(dist, tf.reciprocal)
+    # eps = tf.where(tf.equal(dist, 0), tf.ones_like(dist), tf.zeros_like(dist))
+    # safe_dist = tf.where(gt, dist, tf.ones_like(dist))
+    # inv_dist = tf.reciprocal(safe_dist)
+    # inv_dist = tf.where(gt, inv_dist, tf.zeros_like(dist))
+    # safe_dist = tf.where(gt, dist, tf.ones_like(dist))
+    # tf.where(gt, tf.reciprocal(safe_dist), safe_f(x))
+    # inv_dist = safe_reciprocal(dist)
+    #inv_dist = tf.where(tf.is_finite(inv_dist), inv_dist, tf.zeros_like(inv_dist))
+    loss = n * tf.reduce_sum(dist_inv, -1)
+    # global DEBUG
+    # DEBUG = [diffs, sq_dist, dist, lin_inv, loss]
+    return tf.reduce_mean(loss)
+
+def build(loss_config, num_classes):
     if not isinstance(loss_config, losses_pb2.Loss):
         raise ValueError('loss_config not of type '
                          'losses_pb2.ClassificationLoss.')
@@ -42,7 +67,7 @@ def build(loss_config):
     dist_loss_type = loss_config.dist_loss.WhichOneof('loss_type')
     if dist_loss_type == 'batch':
         dist_loss = partial(_max_dist_batch,
-            ignore_label=loss_config.ignore_label)
+            ignore_label=loss_config.ignore_label, num_classes=num_classes)
     elif dist_loss_type == 'none':
         pass # no distance loss
     else:

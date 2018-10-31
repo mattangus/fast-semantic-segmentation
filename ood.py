@@ -69,8 +69,10 @@ def _get_images_from_path(input_path):
             for f in filenames:
                 file_path = os.path.abspath(os.path.join(dirpath, f))
                 if not _valid_file_ext(file_path):
-                    raise ValueError('File must be JPG or PNG.')
-                image_file_paths.append(file_path)
+                    print("invalid path: '" + file_path + "'. skipping")
+                    #raise ValueError('File must be JPG or PNG.')
+                else:
+                    image_file_paths.append(file_path)
     else:
         if not _valid_file_ext(input_path):
             raise ValueError('File must be JPG or PNG.')
