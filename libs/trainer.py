@@ -383,12 +383,6 @@ def train_segmentation_model(create_model_fn,
                                         run_metadata=run_metadata)
             time_elapsed = time.time() - start_time
 
-            # vals = [np.all(np.isfinite(np.array(v))) for v in cur_gvs]
-            # from pprint import pprint
-            # pprint([(g[1], v) for g,v in zip(grads_and_vars, vals)])
-            # diffs, sq_dist, dist, lin_inv, loss = dbg
-            # import pdb; pdb.set_trace()
-
             if 'should_log' in train_step_kwargs:
                 if sess.run(train_step_kwargs['should_log']):
                     tf.logging.info(
