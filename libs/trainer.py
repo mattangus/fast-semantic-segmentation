@@ -276,7 +276,7 @@ def train_segmentation_model(create_model_fn,
                 train_config.fine_tune_checkpoint_type,
                 train_config.fine_tune_checkpoint)
 
-            variables_to_restore = segmentation_model.restore_map(
+            variables_to_restore = segmentation_model.restore_map(train_config.fine_tune_checkpoint,
               fine_tune_checkpoint_type=train_config.fine_tune_checkpoint_type)
 
             init_fn = slim.assign_from_checkpoint_fn(
@@ -315,7 +315,8 @@ def train_segmentation_model(create_model_fn,
             #                               'total_loss is inf or nan.')
             summaries.add(
                 tf.summary.scalar('Losses/TotalLoss', total_loss))
-            grads_and_vars = [(tf.clip_by_norm(grad, 1.), var) for grad, var in grads_and_vars]
+            # with tf.variable_scope("grad_clip"):
+            #     grads_and_vars = [(tf.clip_by_norm(grad, 1.), var) for grad, var in grads_and_vars]
             grad_updates = training_optimizer.apply_gradients(grads_and_vars,
                                                     global_step=global_step)
             update_ops.append(grad_updates)
