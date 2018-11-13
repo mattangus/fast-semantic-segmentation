@@ -44,6 +44,7 @@ def _max_dist_batch(logits, labels, ignore_label, num_classes):
     dist = safe_f(dot, tf.sqrt, safe_x=tf.zeros_like, cmp=lambda x: tf.greater(x,0.))
     #lin_inv = tf.maximum(0., 100. - dist)
     dist_inv = safe_f(dist, tf.reciprocal)
+    dist_inv = tf.maximum(dist_inv, tf.ones_like(dist_inv) * (1/1000))
     # eps = tf.where(tf.equal(dist, 0), tf.ones_like(dist), tf.zeros_like(dist))
     # safe_dist = tf.where(gt, dist, tf.ones_like(dist))
     # inv_dist = tf.reciprocal(safe_dist)

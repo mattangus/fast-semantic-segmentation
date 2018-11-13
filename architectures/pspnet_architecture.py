@@ -15,6 +15,8 @@ it will result in similar performance as the other models in this project.
 from abc import abstractmethod
 from functools import partial
 import tensorflow as tf
+from tensorflow.python import pywrap_tensorflow
+import numpy as np
 
 from . import base_model as model
 
@@ -255,22 +257,34 @@ class PSPNetArchitecture(model.FastSegmentationModel):
 
         return losses_dict
 
-    def restore_map(self,
+    def restore_map(self, checkpoint_path,
                     fine_tune_checkpoint_type='segmentation'):
         """Restore variables for checkpoints correctly"""
         if fine_tune_checkpoint_type not in [
-                    'segmentation', 'classification']:
+                    'segmentation', 'resnet']:
             raise ValueError('Not supported fine_tune_checkpoint_type: {}'.format(
                 fine_tune_checkpoint_type))
-        if fine_tune_checkpoint_type == 'classification':
-            tf.logging.info('Fine-tuning from classification checkpoints.')
+        if fine_tune_checkpoint_type == 'resnet':
+            tf.logging.info('Fine-tuning from resnet checkpoints.')
             return self._feature_extractor.restore_from_classif_checkpoint_fn(
                 self.shared_feature_extractor_scope)
         exclude_list = ['global_step']
         variables_to_restore = slim.get_variables_to_restore(
                                         exclude=exclude_list)
-                                        
-        return variables_to_restore
+        #check the output layers
+        reader = pywrap_tensorflow.NewCheckpointReader(checkpoint_path)
+        var_to_shape_map = reader.get_variable_to_shape_map()
+        variables_to_restore_new = []
+        for v in variables_to_restore:
+            name = v.name.replace(":0", "")
+            if name in var_to_shape_map:
+                v_shape = np.array(v.shape.as_list())
+                save_shape = np.array(var_to_shape_map[name])
+                if np.all(v_shape == save_shape):
+                    variables_to_restore_new.append(v)
+                else:
+                    print("shape missmatch in:", v, ". skipping")
+        return variables_to_restore_new
 
 
 class PSPNetFeatureExtractor(object):
