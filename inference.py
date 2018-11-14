@@ -115,28 +115,31 @@ def b_inv(b_mat):
     b_inv, _ = torch.gesv(eye, b_mat)
     return b_inv
 
-def compute_mean(m_km1, x_k, k):
+def compute_mean(m_km1, x_k, k, mask):
     if m_km1 is None:
-        return torch.tensor(x_k)
+        return torch.tensor(x_k), torch.ones(x_k.shape)
     x_k = torch.tensor(x_k)
-    temp = (x_k - m_km1)
+    mask = torch.tensor(mask)
+    temp = (x_k - m_km1)*mask
     m_k = m_km1 + temp/k
-    return m_k
+    k += mask
+    return m_k, k
 
-def compute_cov_inv(m, v_km1_inv, x_k, k):
+def compute_cov_inv(m, v_km1_inv, x_k, k, mask):
     dim = x_k.shape[-1]
     out_shape = list(x_k.shape[:-1]) + [dim, x_k.shape[-1]]
     if v_km1_inv is None:
-        return torch.zeros(out_shape)
+        return torch.zeros(out_shape), torch.ones(out_shape)
     x_k = torch.tensor(x_k)
-
+    mask = torch.tensor(mask)
+    mask = mask.unsqueeze(-1)
     temp = (x_k - m)
     sigma = torch.bmm(temp.view(-1, dim).unsqueeze(2), temp.view(-1, dim).unsqueeze(1)).view(out_shape)
-    #import pdb; pdb.set_trace()
-    v_k_inv = b_inv(sigma) + v_km1_inv
-    return v_k_inv
+    v_k_inv = b_inv(sigma)*mask + v_km1_inv
+    k += mask
+    return v_k_inv, k
 
-def compute_stats(m_km1, v_km1_inv, x_k, k, first_pass):
+def compute_stats(m_km1, v_km1_inv, x_k, k, first_pass, mask):
     #numpy version might be better as tf order of updates matters
     #not sure how to control that
     # dim = x_k.shape[-1]
@@ -151,19 +154,20 @@ def compute_stats(m_km1, v_km1_inv, x_k, k, first_pass):
     # v_k = v_km1 + temp2 #temp*(x_k - m_k)
     # return m_k, v_k
     if first_pass:
-        m_k = compute_mean(m_km1, x_k, k)
+        m_k, k = compute_mean(m_km1, x_k, k, mask)
         v_k_inv = v_km1_inv
     else:
         m_k = m_km1
-        v_k_inv = compute_cov_inv(m_k, v_km1_inv, x_k, k)
-    return m_k, v_k_inv
+        v_k_inv, k = compute_cov_inv(m_k, v_km1_inv, x_k, k, mask)
+    return m_k, v_k_inv, k
 
 def process_annot(pred_shape, feat, num_classes):
     annot_place = tf.placeholder(tf.uint8, pred_shape[:-1], "annot_in")
     one_hot = tf.one_hot(annot_place, num_classes)
     resized = tf.expand_dims(tf.image.resize_bilinear(one_hot, feat.get_shape().as_list()[1:-1]), -1)
     sorted_feats = tf.expand_dims(feat, -2)*resized
-    return annot_place, sorted_feats
+    avg_mask = tf.cast(tf.not_equal(resized, 0), tf.float32)
+    return annot_place, sorted_feats, avg_mask
 
 def run_inference_graph(model, trained_checkpoint_prefix,
                         input_images, annot_filenames, input_shape, pad_to_shape,
@@ -187,14 +191,15 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     x = None
     y = None
-    m_k = None
+    #m_k = None
     v_k_inv = None
     class_m_k = None
     class_v_k_inv = None
     first_pass = True
     if FLAGS.compute_stats:
-        if os.path.exists(mean_file) and os.path.exists(class_mean_file):
-            m_k = torch.tensor(np.load(mean_file)["arr_0"])
+        # if os.path.exists(mean_file) and os.path.exists(class_mean_file):
+        if os.path.exists(class_mean_file):
+            #m_k = torch.tensor(np.load(mean_file)["arr_0"])
             class_m_k = torch.tensor(np.load(class_mean_file)["arr_0"])
             first_pass = False
             print("second pass")
@@ -219,9 +224,12 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             # sess.run(tf.global_variables_initializer())
             # sess.run(tf.local_variables_initializer())
             pred_shape = pred_tensor.get_shape().as_list()
-            annot_place, sorted_feats = process_annot(pred_shape, outputs[model.final_logits_key], num_classes)
-            fetch += [outputs[model.final_logits_key], sorted_feats]
+            annot_place, sorted_feats, avg_mask = process_annot(pred_shape, outputs[model.final_logits_key], num_classes)
+            fetch += [outputs[model.final_logits_key], sorted_feats, avg_mask]
         saver.restore(sess, trained_checkpoint_prefix)
+
+        k = None
+        class_k = None
 
         for idx in range(len(input_images)):
             image_path = input_images[idx]
@@ -238,8 +246,9 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             if FLAGS.compute_stats:
                 logits = res[1]
                 sorted_logtis = res[2]
-                m_k, v_k_inv = compute_stats(m_k, v_k_inv, logits, idx+1, first_pass)
-                class_m_k, class_v_k_inv = compute_stats(class_m_k, class_v_k_inv, sorted_logtis, idx+1, first_pass)
+                mask = res[3]
+                #m_k, v_k_inv, k = compute_stats(m_k, v_k_inv, logits, k, first_pass, mask)
+                class_m_k, class_v_k_inv, class_k = compute_stats(class_m_k, class_v_k_inv, sorted_logtis, class_k, first_pass, mask)
             
             # if idx > 10:
             #     import pdb; pdb.set_trace()
@@ -273,25 +282,26 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
             if first_pass:
                 class_m_k = class_m_k.numpy()
-                m_k = m_k.numpy()
-                if np.isnan(m_k).any() or np.isnan(class_m_k).any():
+                #m_k = m_k.numpy()
+                #if np.isnan(m_k).any() or np.isnan(class_m_k).any():
+                if np.isnan(class_m_k).any():
                     print("nan time")
                     import pdb; pdb.set_trace()
-                np.savez(mean_file, m_k)
+                #np.savez(mean_file, m_k)
                 np.savez(class_mean_file, class_m_k)
             else:
                 #v_k = b_inv(v_k_inv)
                 #class_v_k = b_inv(class_v_k_inv)
 
-                class_v_k_inv = class_v_k_inv.numpy()
-                v_k_inv = v_k_inv.numpy()
+                class_v_k_inv = (class_v_k_inv/(class_k+1)).numpy()
+                v_k_inv = (v_k_inv/(k+1)).numpy()
 
                 if np.isnan(v_k_inv).any() or np.isnan(class_v_k_inv).any():
                     print("nan time")
                     import pdb; pdb.set_trace()
 
-                np.savez(class_cov_file, class_v_k_inv/(idx+1))
-                np.savez(cov_file, v_k_inv/(idx+1))
+                np.savez(class_cov_file, class_v_k_inv)
+                np.savez(cov_file, v_k_inv)
         # print(save_location)
         # res = 25
         # vec_pred = np.fliplr(vec_pred)

@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sb
 from sklearn.decomposition import PCA
 from mpl_toolkits.mplot3d import Axes3D
+import os
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--mean", type=str, required=True)
@@ -58,7 +59,7 @@ yticklabels = xticklabels
 
 plt.figure(figsize=[20.48,10.24])
 sb.heatmap(cm, annot=True, fmt="g", xticklabels=xticklabels, yticklabels=yticklabels)
-plt.savefig("mean_dists.png")
+plt.savefig(os.path.join(os.path.dirname(args.mean),"mean_dists.png"))
 plt.cla() #clear memory since no display happens
 plt.clf()
 
