@@ -106,6 +106,7 @@ def process_logits(final_logits, mean_v, var_v, depth, pred_shape, num_classes, 
     dist = tf.squeeze(tf.matmul(left, temp, transpose_b=True))
 
     img_dist = tf.expand_dims(tf.reshape(dist, in_shape[1:-1] + [num_classes]), 0)
+    img_dist = tf.where(tf.equal(img_dist, tf.zeros_like(img_dist)), tf.ones_like(img_dist)*float("inf"), img_dist)
     full_dist = tf.image.resize_bilinear(img_dist, (pred_shape[1],pred_shape[2]))
     dist_class = tf.argmin(full_dist, -1)
     # scaled_dist = full_dist/tf.reduce_max(full_dist)
@@ -179,13 +180,15 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             # full_dist = cv2.resize(img_dist, (predictions.shape[2],predictions.shape[1]), interpolation=cv2.INTER_LINEAR)
             dist_out = res[1][0].astype(np.uint8)
             full_dist_out = res[3][0]
-            full_dist_out = full_dist_out/np.max(full_dist_out)
+            #full_dist_out = full_dist_out/np.nanmax(full_dist_out)
 
             for i in range(num_classes):
                 temp = full_dist_out[:,:,i]
+                temp[np.logical_not(np.isfinite(temp))] = 0
+                temp = temp/np.max(temp)
                 cv2.imshow(str(i), temp)
             cv2.waitKey()
-            #import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             # scaled_dist = full_dist/np.max(full_dist)
             # dist_out = (scaled_dist*255).astype(np.uint8)
             elapsed = timeit.default_timer() - start_time

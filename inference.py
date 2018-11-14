@@ -178,6 +178,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         input_shape=input_shape,
         pad_to_shape=pad_to_shape,
         label_color_map=label_color_map)
+
     pred_tensor = outputs[model.main_class_predictions_key]
 
     # pl_size = np.reduce_prod(placeholder_tensor.get_shape().as_list())
@@ -192,7 +193,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     x = None
     y = None
     #m_k = None
-    v_k_inv = None
+    #v_k_inv = None
     class_m_k = None
     class_v_k_inv = None
     first_pass = True
@@ -202,9 +203,6 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             #m_k = torch.tensor(np.load(mean_file)["arr_0"])
             class_m_k = torch.tensor(np.load(class_mean_file)["arr_0"])
             first_pass = False
-            print("second pass")
-        else:
-            print("first pass")
     config = tf.ConfigProto()
     config.gpu_options.allow_growth=True
 
@@ -230,78 +228,87 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
         k = None
         class_k = None
-
-        for idx in range(len(input_images)):
-            image_path = input_images[idx]
-            image_raw = np.array(Image.open(image_path))
-            annot_raw = cv2.imread(annot_filenames[idx])
-
-            start_time = timeit.default_timer()
-            feed = {placeholder_tensor: image_raw}
-            if FLAGS.compute_stats:
-                feed[annot_place] = np.expand_dims(annot_raw[:,:,0], 0)
-            res = sess.run(fetch,
-                feed_dict=feed)
-            predictions = res[0]
-            if FLAGS.compute_stats:
-                logits = res[1]
-                sorted_logtis = res[2]
-                mask = res[3]
-                #m_k, v_k_inv, k = compute_stats(m_k, v_k_inv, logits, k, first_pass, mask)
-                class_m_k, class_v_k_inv, class_k = compute_stats(class_m_k, class_v_k_inv, sorted_logtis, class_k, first_pass, mask)
-            
-            # if idx > 10:
-            #     import pdb; pdb.set_trace()
-            elapsed = timeit.default_timer() - start_time
-            print('{}) wall time: {}'.format(elapsed, idx+1))
-            if not FLAGS.compute_stats:
-                filename = os.path.basename(image_path)
-                save_location = os.path.join(output_directory, filename)
-
-                predictions = predictions.astype(np.uint8)
-                output_channels = len(label_color_map[0])
-                if output_channels == 1:
-                    predictions = np.squeeze(predictions[0],-1)
-                else:
-                    predictions = predictions[0]
-                im = Image.fromarray(predictions)
-                im.save(save_location, "PNG")
-            
-            if x is None or y is None:
-                x = np.arange(0, predictions.shape[2], dtype=np.int32)
-                y = np.arange(0, predictions.shape[1], dtype=np.int32)
-                x, y = np.meshgrid(x,y)
-            
-            # if idx > 10:
-            #     break
-
-        # m_k, v_k_inv = sess.run([mean, covar])
-
-        if FLAGS.compute_stats:
-            os.makedirs(stats_dir, exist_ok=True)
-
+        if first_pass:
+            passes = [True, False]
+        else:
+            passes = [False] #means loaded from disk
+        
+        for first_pass in passes:
             if first_pass:
-                class_m_k = class_m_k.numpy()
-                #m_k = m_k.numpy()
-                #if np.isnan(m_k).any() or np.isnan(class_m_k).any():
-                if np.isnan(class_m_k).any():
-                    print("nan time")
-                    import pdb; pdb.set_trace()
-                #np.savez(mean_file, m_k)
-                np.savez(class_mean_file, class_m_k)
+                print("first pass")
             else:
-                #v_k = b_inv(v_k_inv)
-                #class_v_k = b_inv(class_v_k_inv)
+                print("second pass")
+            for flipped in [False, True]:
+                print("flipped:", flipped)
+                for idx in range(len(input_images)):
+                    image_path = input_images[idx]
+                    image_raw = np.array(Image.open(image_path))
+                    annot_raw = cv2.imread(annot_filenames[idx])
+                    if flipped:
+                        image_raw = np.fliplr(image_raw)
+                        annot_raw = np.fliplr(annot_raw)
 
-                class_v_k_inv = (class_v_k_inv/(class_k+1)).numpy()
-                v_k_inv = (v_k_inv/(k+1)).numpy()
+                    start_time = timeit.default_timer()
+                    feed = {placeholder_tensor: image_raw}
+                    if FLAGS.compute_stats:
+                        feed[annot_place] = np.expand_dims(annot_raw[:,:,0], 0)
+                    res = sess.run(fetch,feed_dict=feed)
+                    predictions = res[0]
+                    if FLAGS.compute_stats:
+                        logits = res[1]
+                        sorted_logtis = res[2]
+                        mask = res[3]
+                        #m_k, v_k_inv, k = compute_stats(m_k, v_k_inv, logits, k, first_pass, mask)
+                        class_m_k, class_v_k_inv, class_k = compute_stats(class_m_k, class_v_k_inv, sorted_logtis, class_k, first_pass, mask)
+                    
+                    # if idx > 10:
+                    #     import pdb; pdb.set_trace()
+                    elapsed = timeit.default_timer() - start_time
+                    print('{}) wall time: {}'.format(elapsed, idx+1))
+                    if not FLAGS.compute_stats:
+                        filename = os.path.basename(image_path)
+                        save_location = os.path.join(output_directory, filename)
 
-                if np.isnan(v_k_inv).any() or np.isnan(class_v_k_inv).any():
-                    print("nan time")
-                    import pdb; pdb.set_trace()
+                        predictions = predictions.astype(np.uint8)
+                        output_channels = len(label_color_map[0])
+                        if output_channels == 1:
+                            predictions = np.squeeze(predictions[0],-1)
+                        else:
+                            predictions = predictions[0]
+                        im = Image.fromarray(predictions)
+                        im.save(save_location, "PNG")
+                    
+                    if idx > 10:
+                        break
 
-                np.savez(class_cov_file, class_v_k_inv)
-                np.savez(cov_file, v_k_inv)
+                # m_k, v_k_inv = sess.run([mean, covar])
+
+            if FLAGS.compute_stats:
+                os.makedirs(stats_dir, exist_ok=True)
+
+                if first_pass:
+                    class_m_k_np = class_m_k.numpy()
+                    #m_k = m_k.numpy()
+                    #if np.isnan(m_k).any() or np.isnan(class_m_k).any():
+                    if np.isnan(class_m_k_np).any():
+                        print("nan time")
+                        import pdb; pdb.set_trace()
+                    #np.savez(mean_file, m_k)
+                    np.savez(class_mean_file, class_m_k_np)
+                else:
+                    #v_k = b_inv(v_k_inv)
+                    #class_v_k = b_inv(class_v_k_inv)
+
+                    class_v_k_inv_np = (class_v_k_inv/(class_k+1)).numpy()
+                    #v_k_inv = (v_k_inv/(k+1)).numpy()
+
+                    # if np.isnan(v_k_inv).any() or np.isnan(class_v_k_inv).any():
+                    if np.isnan(class_v_k_inv_np).any():
+                        print("nan time")
+                        import pdb; pdb.set_trace()
+
+                    np.savez(class_cov_file, class_v_k_inv_np)
+                    # np.savez(cov_file, v_k_inv)
         # print(save_location)
         # res = 25
         # vec_pred = np.fliplr(vec_pred)
