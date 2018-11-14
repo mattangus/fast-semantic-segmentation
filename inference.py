@@ -80,6 +80,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         input_shape=input_shape,
         pad_to_shape=pad_to_shape,
         label_color_map=label_color_map)
+    pred_tensor = outputs[model.main_class_predictions_key]
 
     with tf.Session() as sess:
         input_graph_def = tf.get_default_graph().as_graph_def()
@@ -90,7 +91,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             image_raw = np.array(Image.open(image_path))
 
             start_time = timeit.default_timer()
-            predictions = sess.run(outputs,
+            predictions = sess.run(pred_tensor,
                 feed_dict={placeholder_tensor: image_raw})
             elapsed = timeit.default_timer() - start_time
 
