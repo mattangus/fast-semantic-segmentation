@@ -22,6 +22,8 @@ tf.flags.DEFINE_string('annot_pattern', '',
                        'Pattern matching input images for Cityscapes.')
 tf.flags.DEFINE_string('cityscapes_dir', '',
                        'Pattern matching ground truth images for Cityscapes.')
+tf.flags.DEFINE_string('list_file', '',
+                       'path to csv with each row as <path to rl>,<path to gt>')                       
 tf.flags.DEFINE_string('split_type', '',
                        'Type of split: `train`, `test` or `val`.')
 tf.flags.DEFINE_string('output_dir', '', 'Output data directory.')
@@ -127,9 +129,10 @@ def main(_):
     assert FLAGS.split_type, '`split_type` missing.'
     assert FLAGS.name, "`name` missing"
     assert (FLAGS.cityscapes_dir) or \
-           (FLAGS.input_pattern and FLAGS.annot_pattern), \
+           (FLAGS.input_pattern and FLAGS.annot_pattern) or \
+           (FLAGS.list_file), \
            'Must specify either `cityscapes_dir` or ' \
-           '`input_pattern` and `annot_pattern`.'
+           '(`input_pattern` and `annot_pattern`) or `list_file`.'
 
     if not tf.gfile.IsDirectory(FLAGS.output_dir):
         tf.gfile.MakeDirs(FLAGS.output_dir)
@@ -147,6 +150,11 @@ def main(_):
             image_filenames = sorted(image_filenames)
             annot_filenames = sorted(annot_filenames)
             import pdb; pdb.set_trace()
+    elif FLAGS.list_file:
+        with open(FLAGS.list_file) as f:
+            content = f.readlines()
+        content = [x.strip().split(",") for x in content]
+        image_filenames, annot_filenames = zip(*content)
     else:
         image_filenames = glob.glob(FLAGS.input_pattern)
         annot_filenames = glob.glob(FLAGS.annot_pattern)
