@@ -25,7 +25,7 @@ def _map_to_colored_labels(segmentation_map, shape_list, color_map):
     onehot_labels = tf.reshape(onehot_labels, (-1, num_classes))
     colored_label = tf.matmul(onehot_labels, color_table)
     colored_label = tf.reshape(colored_label,
-        (shape_list[0], shape_list[1], shape_list[2], output_channels))
+        (-1, shape_list[1], shape_list[2], output_channels))
     return colored_label
 
 def _get_outputs_from_inputs(model, input_tensors,
@@ -73,8 +73,13 @@ def deploy_segmentation_inference_graph(model, input_shape,
         predictions = _map_to_colored_labels(predictions, output_shape, label_color_map)
 
     if pad_to_shape is not None:
-        predictions = tf.image.crop_to_bounding_box(
-            predictions, 0, 0, input_shape[0], input_shape[1])
+        if len(input_shape) < 4:
+            height = input_shape[0] #no batch
+            width = input_shape[1]
+        else:
+            height = input_shape[1] #has batch
+            width = input_shape[2]
+        predictions = tf.image.crop_to_bounding_box(predictions, 0, 0, height, width)
     # if model.final_logits_key in outputs:
     #     logits = outputs[model.final_logits_key]
     #     logits = tf.image.crop_to_bounding_box(

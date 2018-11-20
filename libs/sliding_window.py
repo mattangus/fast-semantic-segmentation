@@ -1,14 +1,14 @@
 import tensorflow as tf
 
-def extract_patches(inputs, crop_height, crop_width):
+def extract_patches(inputs, crop_height, crop_width, stride_scale=2):
     c = inputs.get_shape()[-1]
     ksizes = [1, crop_height, crop_width, 1]
-    strides = [1, crop_height//3, crop_width//3, 1]
+    strides = [1, crop_height//stride_scale, crop_width//stride_scale, 1]
     rates = [1,1,1,1]
-    padding = "SAME"
+    padding = "VALID"
     patches = tf.extract_image_patches(inputs, ksizes=ksizes, strides=strides, rates=rates, padding=padding)
     patches_shape = tf.shape(patches)
-    return patches #tf.reshape(patches, [tf.reduce_prod(patches_shape[0:3]), crop_height, crop_width, int(c)])
+    return tf.reshape(patches, [tf.reduce_prod(patches_shape[0:3]), crop_height, crop_width, int(c)])
 
 def merge_patches(x, y, crop_height, crop_width):
     _x = tf.zeros_like(x)
