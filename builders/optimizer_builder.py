@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-def _create_learning_rate(learning_rate_config):
+def _create_learning_rate(learning_rate_config, num_clones):
     learning_rate = None
     learning_rate_type = learning_rate_config.WhichOneof('learning_rate')
 
@@ -16,7 +16,7 @@ def _create_learning_rate(learning_rate_config):
     if learning_rate_type == 'polynomial_decay_learning_rate':
         config = config = learning_rate_config.polynomial_decay_learning_rate
         learning_rate = tf.train.polynomial_decay(
-            config.initial_learning_rate,
+            config.initial_learning_rate*num_clones,
             tf.train.get_or_create_global_step(),
             config.decay_steps,
             power=config.power,
@@ -25,7 +25,7 @@ def _create_learning_rate(learning_rate_config):
     if learning_rate_type == 'exponential_decay_learning_rate':
         config = learning_rate_config.exponential_decay_learning_rate
         learning_rate = tf.train.exponential_decay(
-            config.initial_learning_rate,
+            config.initial_learning_rate*num_clones,
             tf.train.get_or_create_global_step(),
             config.decay_steps,
             config.decay_factor,
@@ -37,7 +37,7 @@ def _create_learning_rate(learning_rate_config):
     return learning_rate
 
 
-def build(optimizer_config):
+def build(optimizer_config, num_clones):
     optimizer_type = optimizer_config.WhichOneof('optimizer')
     optimizer = None
 
@@ -46,7 +46,7 @@ def build(optimizer_config):
     # Used by authors of ICNet for training. Momentum is set to 0.9.
     if optimizer_type == 'momentum_optimizer':
         config = optimizer_config.momentum_optimizer
-        learning_rate = _create_learning_rate(config.learning_rate)
+        learning_rate = _create_learning_rate(config.learning_rate, num_clones)
         summary_vars.append(learning_rate)
         optimizer = tf.train.MomentumOptimizer(
             learning_rate,
@@ -55,7 +55,7 @@ def build(optimizer_config):
     # The ADAM optimizer is used by ENet authors
     if optimizer_type == 'adam_optimizer':
         config = optimizer_config.adam_optimizer
-        learning_rate = _create_learning_rate(config.learning_rate)
+        learning_rate = _create_learning_rate(config.learning_rate, num_clones)
         summary_vars.append(learning_rate)
         optimizer = tf.train.AdamOptimizer(learning_rate)
 

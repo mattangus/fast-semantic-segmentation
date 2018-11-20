@@ -59,7 +59,7 @@ def get_checkpoints_from_path(initial_checkpoint_path, checkpoint_dir):
     checkpoints_to_evaluate = None
     tf.logging.info('Searching checkpoints in %s', checkpoint_dir)
     for idx, ckpt in enumerate(all_checkpoints):
-        print(idx, ' ', str(ckpt))
+        print("skipping:", idx, ' ', str(ckpt))
         dirname = os.path.dirname(ckpt)
         full_init_ckpt_path = os.path.join(dirname, initial_checkpoint_path)
         if str(ckpt) == full_init_ckpt_path:

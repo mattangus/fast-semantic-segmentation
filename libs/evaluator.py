@@ -263,7 +263,7 @@ def eval_segmentation_model(create_model_fn,
                             eval_op=eval_op,
                             final_op=value_op,
                             summary_op=summary_op,
-                            timeout=0,
+                            #timeout=0,
                             variables_to_restore=variables_to_restore)
         
         tf.logging.info('Evaluation over. Eval values: {}'.format(

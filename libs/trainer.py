@@ -256,7 +256,7 @@ def train_segmentation_model(create_model_fn,
         with tf.device(deploy_config.optimizer_device()): # CPU of each worker
             (training_optimizer,
               optimizer_summary_vars) = optimizer_builder.build(
-                train_config.optimizer)
+                train_config.optimizer, num_clones)
             for var in optimizer_summary_vars:
                 summaries.add(
                     tf.summary.scalar(var.op.name, var, family='LearningRate'))
