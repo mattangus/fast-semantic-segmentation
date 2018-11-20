@@ -63,9 +63,6 @@ flags.DEFINE_string('output_dir', None, 'Path to write outputs images.')
 
 flags.DEFINE_boolean('label_ids', False,
                      'Whether the output should be label ids.')
-                     
-flags.DEFINE_boolean('use_pool', False,
-                     'avg pool over spatial dims')
 
 _DEFAULT_PATTEN = {
     'input': '*_leftImg8bit.png',
@@ -166,14 +163,11 @@ def compute_stats(m_km1, v_km1_inv, x_k, k, first_pass, mask):
         v_k_inv, k = compute_cov_inv(m_k, v_km1_inv, x_k, k, mask)
     return m_k, v_k_inv, k
 
-def process_annot(pred_shape, feat, num_classes, use_pool):
+def process_annot(pred_shape, feat, num_classes):
     annot_place = tf.placeholder(tf.uint8, pred_shape[1:-1], "annot_in")
     one_hot = tf.one_hot(tf.expand_dims(annot_place,0), num_classes)
     resized = tf.expand_dims(tf.image.resize_nearest_neighbor(one_hot, feat.get_shape().as_list()[1:-1]), -1)
     sorted_feats = tf.expand_dims(feat, -2)*resized
-    if use_pool:
-        resized = tf.reduce_sum(resized, [1,2], keepdims=True)
-        sorted_feats = tf.reduce_sum(sorted_feats, [1,2], keepdims=True) / resized
     avg_mask = tf.cast(tf.not_equal(resized, 0), tf.float32)
     return annot_place, sorted_feats, avg_mask
 
@@ -183,22 +177,13 @@ def img_to_patch(input_shape, patch_size):
     patches = sliding_window.extract_patches(expand, patch_size[0], patch_size[1])
     return patches, patch_place
 
-def tensor_to_patch(inputs, patch_size):
-    #import pdb; pdb.set_trace()
-    input_shape = inputs.get_shape().as_list()
-    reshape_inputs = tf.reshape(inputs, [-1] + input_shape[1:3] + [np.prod(input_shape[3:])])
-    patches = sliding_window.extract_patches(reshape_inputs, patch_size[0], patch_size[1])
-    patches = tf.reshape(patches, [-1] + patch_size + input_shape[3:])
-    return patches
-
 def run_inference_graph(model, trained_checkpoint_prefix,
                         input_images, annot_filenames, input_shape, pad_to_shape,
-                        label_color_map, output_directory, num_classes, patch_size,
-                        use_pool):
+                        label_color_map, output_directory, num_classes, patch_size):
     effective_shape = copy.deepcopy(input_shape)
-    # if patch_size:
-    #     effective_shape[:2] = patch_size
-    #     #patches, patch_place = img_to_patch(input_shape, patch_size)
+    if patch_size:
+        effective_shape[:2] = patch_size
+        patches, patch_place = img_to_patch(input_shape, patch_size)
 
     outputs, placeholder_tensor = deploy_segmentation_inference_graph(
         model=model,
@@ -245,13 +230,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         # sess.run(tf.global_variables_initializer())
         # sess.run(tf.local_variables_initializer())
         pred_shape = pred_tensor.get_shape().as_list()
-        annot_place, sorted_feats, avg_mask = process_annot(pred_shape, outputs[model.final_logits_key], num_classes, use_pool)
-        if patch_size:
-            patches = tensor_to_patch(sorted_feats, patch_size)
-            avg_mask = tensor_to_patch(avg_mask, patch_size)
-            fetch = [patches, avg_mask]
-        else:
-            fetch = [sorted_feats, avg_mask]
+        annot_place, sorted_feats, avg_mask = process_annot(pred_shape, outputs[model.final_logits_key], num_classes)
+        fetch = [sorted_feats, avg_mask]
         saver.restore(sess, trained_checkpoint_prefix)
 
         k = None
@@ -280,27 +260,26 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                         image_raw = np.fliplr(image_raw)
                         annot_raw = np.fliplr(annot_raw)
 
-                    # if patch_size:
-                    #     all_image_raw = sess.run(patches, feed_dict={patch_place: image_raw})
-                    #     all_annot_raw = sess.run(patches, feed_dict={patch_place: annot_raw})
-                    # else:
-                    #     all_image_raw = [image_raw]
-                    #     all_annot_raw = [annot_raw]
+                    if patch_size:
+                        all_image_raw = sess.run(patches, feed_dict={patch_place: image_raw})
+                        all_annot_raw = sess.run(patches, feed_dict={patch_place: annot_raw})
+                    else:
+                        all_image_raw = [image_raw]
+                        all_annot_raw = [annot_raw]
 
-                    # for i in range(len(all_image_raw)):
-                    feed = {placeholder_tensor: image_raw}
-                    feed[annot_place] = annot_raw[...,0]
-                    res = sess.run(fetch,feed_dict=feed)
-                    sorted_logits = res[0]
-                    mask = res[1]
-                    #import pdb; pdb.set_trace()
-                    #m_k, v_k_inv, k = compute_stats(m_k, v_k_inv, logits, k, first_pass, mask)
-                    for b in range(sorted_logits.shape[0]): #should only be 1
-                        class_m_k, class_v_k_inv, class_k = compute_stats(class_m_k, class_v_k_inv, sorted_logits[b:b+1], class_k, first_pass, mask[b:b+1])
+                    for i in range(len(all_image_raw)):
+                        feed = {placeholder_tensor: all_image_raw[i]}
+                        feed[annot_place] = all_annot_raw[i,...,0]
+                        res = sess.run(fetch,feed_dict=feed)
+                        sorted_logits = res[0]
+                        mask = res[1]
+                        #m_k, v_k_inv, k = compute_stats(m_k, v_k_inv, logits, k, first_pass, mask)
+                        #for b in range(sorted_logits.shape[0]): #should only be 1
+                        class_m_k, class_v_k_inv, class_k = compute_stats(class_m_k, class_v_k_inv, sorted_logits, class_k, first_pass, mask)
                     
                     # if idx > 10:
                     #     import pdb; pdb.set_trace()
-                # if idx > 10:
+                # if idx > 5:
                 #     break
                     
                 elapsed = timeit.default_timer() - start_time
@@ -399,7 +378,7 @@ def main(_):
 
     run_inference_graph(segmentation_model, FLAGS.trained_checkpoint,
                         input_images, annot_filenames, input_shape, pad_to_shape,
-                        label_map, output_directory, num_classes, patch_size, FLAGS.use_pool)
+                        label_map, output_directory, num_classes, patch_size)
 
 if __name__ == '__main__':
     tf.app.run()

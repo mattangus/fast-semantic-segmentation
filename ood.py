@@ -92,8 +92,10 @@ def process_logits(final_logits, mean_v, var_v, depth, pred_shape, num_classes, 
     if not use_class:
         var = tf.tile(tf.expand_dims(var, 3), [1, 1, 1, num_classes, 1, 1])
     if use_pool:
-        var = tf.reduce_mean(var, axis=[0,1,2], keepdims=True)
-        mean = tf.reduce_mean(mean, axis=[0,1,2], keepdims=True)
+        var_brod = tf.ones_like(var)
+        mean_brod = tf.ones_like(mean)
+        var = tf.reduce_mean(var, axis=[0,1,2,3], keepdims=True)*var_brod
+        mean = tf.reduce_mean(mean, axis=[0,1,2], keepdims=True)*mean_brod
     var = tf.reshape(var, [-1, in_shape[-1], in_shape[-1]])
     mean = tf.reshape(mean, [-1, num_classes, in_shape[-1]])
 
@@ -109,14 +111,15 @@ def process_logits(final_logits, mean_v, var_v, depth, pred_shape, num_classes, 
     img_dist = tf.where(tf.equal(img_dist, tf.zeros_like(img_dist)), tf.ones_like(img_dist)*float("inf"), img_dist)
     full_dist = tf.image.resize_bilinear(img_dist, (pred_shape[1],pred_shape[2]))
     dist_class = tf.argmin(full_dist, -1)
+    min_dist = tf.reduce_min(full_dist, -1)
     # scaled_dist = full_dist/tf.reduce_max(full_dist)
     # dist_out = (scaled_dist*255).astype(np.uint8)
-    return dist_class, full_dist, mean_p, var_p #, [temp, temp2, left, dist, img_dist]
+    return dist_class, full_dist, min_dist, mean_p, var_p #, [temp, temp2, left, dist, img_dist]
 
 def run_inference_graph(model, trained_checkpoint_prefix,
                         input_images, input_shape, pad_to_shape,
                         label_color_map, output_directory,
-                        dist_dir, eval_dir, num_classes):
+                        dist_dir, eval_dir, min_dir, num_classes):
 
     outputs, placeholder_tensor = deploy_segmentation_inference_graph(
         model=model,
@@ -147,13 +150,13 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     #mean = np.reshape(mean, [-1] + mean_dims)
     #var = np.reshape(var, [-1] + var_dims)
     
-    dist_class, full_dist, mean_p, var_p  = process_logits(final_logits, mean, var, depth, pred_tensor.get_shape().as_list(), num_classes, use_class, use_pool)
+    dist_class, full_dist, min_dist, mean_p, var_p  = process_logits(final_logits, mean, var, depth, pred_tensor.get_shape().as_list(), num_classes, use_class, use_pool)
     dist_colour = _map_to_colored_labels(dist_class, pred_tensor.get_shape().as_list(), label_color_map)
 
     mean = np.reshape(mean, mean_p.get_shape().as_list())
     var = np.reshape(var, var_p.get_shape().as_list())
 
-    fetch = [pred_tensor, dist_colour, dist_class, full_dist]
+    fetch = [pred_tensor, dist_colour, dist_class, full_dist, min_dist]
     
     x = None
     y = None
@@ -180,14 +183,20 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             # full_dist = cv2.resize(img_dist, (predictions.shape[2],predictions.shape[1]), interpolation=cv2.INTER_LINEAR)
             dist_out = res[1][0].astype(np.uint8)
             full_dist_out = res[3][0]
+            min_dist_out = res[4][0]
+            #import pdb; pdb.set_trace()
+            min_dist = np.expand_dims(np.nanmin(full_dist_out, -1), -1)
+            min_dist[np.logical_not(np.isfinite(min_dist))] = 0
+            min_dist = (255*min_dist/np.max(min_dist)).astype(np.uint8)
+            #import pdb; pdb.set_trace()
             #full_dist_out = full_dist_out/np.nanmax(full_dist_out)
 
-            for i in range(num_classes):
-                temp = full_dist_out[:,:,i]
-                temp[np.logical_not(np.isfinite(temp))] = 0
-                temp = temp/np.max(temp)
-                cv2.imshow(str(i), temp)
-            cv2.waitKey()
+            # for i in range(num_classes):
+            #     temp = full_dist_out[:,:,i]
+            #     temp[np.logical_not(np.isfinite(temp))] = 0
+            #     temp = temp/np.max(temp)
+            #     cv2.imshow(str(i), temp)
+            # cv2.waitKey()
             # import pdb; pdb.set_trace()
             # scaled_dist = full_dist/np.max(full_dist)
             # dist_out = (scaled_dist*255).astype(np.uint8)
@@ -196,6 +205,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             filename = os.path.basename(image_path)
             save_location = os.path.join(output_directory, filename)
             dist_filename = os.path.join(dist_dir, filename)
+            min_filename = os.path.join(min_dir, filename)
 
             predictions = predictions.astype(np.uint8)
             output_channels = len(label_color_map[0])
@@ -206,6 +216,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             #import pdb; pdb.set_trace()
             im = Image.fromarray(predictions)
             im.save(save_location, "PNG")
+
+            cv2.imwrite(min_filename, min_dist)
 
             im = Image.fromarray(dist_out)
             im.save(dist_filename, "PNG")
@@ -221,7 +233,9 @@ def main(_):
         dist_dir = os.path.join(eval_dir, "class_dist" + suff)
     else:
         dist_dir = os.path.join(eval_dir, "dist" + suff)
+    min_dir = os.path.join(eval_dir, "min" + suff)
     tf.gfile.MakeDirs(output_directory)
+    tf.gfile.MakeDirs(min_dir)
     tf.gfile.MakeDirs(dist_dir)
     pipeline_config = pipeline_pb2.PipelineConfig()
     with tf.gfile.GFile(FLAGS.config_path, 'r') as f:
@@ -249,7 +263,7 @@ def main(_):
 
     run_inference_graph(segmentation_model, FLAGS.trained_checkpoint,
                         input_images, input_shape, pad_to_shape,
-                        label_map, output_directory, dist_dir, eval_dir, num_classes)
+                        label_map, output_directory, dist_dir, eval_dir, min_dir, num_classes)
 
 if __name__ == '__main__':
     tf.app.run()
