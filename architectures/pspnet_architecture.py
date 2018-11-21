@@ -105,12 +105,15 @@ class PSPNetArchitecture(model.FastSegmentationModel):
             # Class class_predictions
             with tf.variable_scope('Predictions'):
                 # TODO: remove hack to not load predictions
-                # load_scope = ""
-                # if self._train_reduce:
-                #     load_scope = "dim_reduce"
-                # with tf.variable_scope(load_scope):
-                predictions = slim.conv2d(final_logits, self._num_classes,
-                        1, 1, activation_fn=None, normalizer_fn=None)
+                def pred_fun():
+                    return slim.conv2d(final_logits, self._num_classes,
+                                1, 1, activation_fn=None, normalizer_fn=None)
+                if self._train_reduce:
+                    with tf.variable_scope("dim_reduce"):
+                        predictions = pred_fun()
+                else:
+                    predictions = pred_fun()
+                
                 if self._train_reduce:
                     predictions_no_resize = final_logits
                 else:
