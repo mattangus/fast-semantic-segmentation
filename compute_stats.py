@@ -24,6 +24,7 @@ from builders import model_builder, dataset_builder
 from libs.exporter import deploy_segmentation_inference_graph
 from libs.constants import CITYSCAPES_LABEL_COLORS, CITYSCAPES_LABEL_IDS
 from libs.custom_metric import streaming_mean
+from submod.cholesky.cholesky_update import cholesky_update
 
 slim = tf.contrib.slim
 
@@ -104,10 +105,10 @@ def _get_images_from_path(input_path):
         image_file_paths.append(input_path)
     return image_file_paths
 
-def b_inv(b_mat):
-    eye = b_mat.new_ones(b_mat.size(-1)).diag().expand_as(b_mat)
-    b_inv, _ = torch.gesv(eye, b_mat)
-    return b_inv
+# def b_inv(b_mat):
+#     eye = b_mat.new_ones(b_mat.size(-1)).diag().expand_as(b_mat)
+#     b_inv, _ = torch.gesv(eye, b_mat)
+#     return b_inv
 
 def compute_mean(m_km1, x_k, k, mask):
     if m_km1 is None:
@@ -119,28 +120,28 @@ def compute_mean(m_km1, x_k, k, mask):
     k += mask
     return m_k, k
 
-def compute_cov_inv(m, v_km1_inv, x_k, k, mask):
-    dim = x_k.shape[-1]
-    out_shape = list(x_k.shape[:-1]) + [dim, x_k.shape[-1]]
-    if v_km1_inv is None:
-        return torch.zeros(out_shape), torch.ones(out_shape)
-    x_k = torch.tensor(x_k)
-    mask = torch.tensor(mask)
-    mask = mask.unsqueeze(-1)
-    temp = (x_k - m)
-    sigma = torch.bmm(temp.view(-1, dim).unsqueeze(2), temp.view(-1, dim).unsqueeze(1)).view(out_shape)
-    v_k_inv = b_inv(sigma)*mask + v_km1_inv
-    k += mask
-    return v_k_inv, k
+# def compute_cov_inv(m, v_km1_inv, x_k, k, mask):
+#     dim = x_k.shape[-1]
+#     out_shape = list(x_k.shape[:-1]) + [dim, x_k.shape[-1]]
+#     if v_km1_inv is None:
+#         return torch.zeros(out_shape), torch.ones(out_shape)
+#     x_k = torch.tensor(x_k)
+#     mask = torch.tensor(mask)
+#     mask = mask.unsqueeze(-1)
+#     temp = (x_k - m)
+#     sigma = torch.bmm(temp.view(-1, dim).unsqueeze(2), temp.view(-1, dim).unsqueeze(1)).view(out_shape)
+#     v_k_inv = b_inv(sigma)*mask + v_km1_inv
+#     k += mask
+#     return v_k_inv, k
 
-def compute_stats(m_km1, v_km1_inv, x_k, mask, x_k_mean, k, first_pass):
-    if first_pass:
-        m_k, k = compute_mean(m_km1, x_k, k, mask)
-        v_k_inv = v_km1_inv
-    else:
-        m_k = m_km1
-        v_k_inv, k = compute_cov_inv(m_k, v_km1_inv, x_k, k, mask)
-    return m_k, v_k_inv, k
+# def compute_stats(m_km1, v_km1_inv, x_k, mask, x_k_mean, k, first_pass):
+#     if first_pass:
+#         m_k, k = compute_mean(m_km1, x_k, k, mask)
+#         v_k_inv = v_km1_inv
+#     else:
+#         m_k = m_km1
+#         v_k_inv, k = compute_cov_inv(m_k, v_km1_inv, x_k, k, mask)
+#     return m_k, v_k_inv, k
 
 def safe_div(a,b):
     b = tf.ones_like(a)*b #broadcast
@@ -150,24 +151,8 @@ def process_annot(annot_tensor, feat, num_classes):
     one_hot = tf.one_hot(annot_tensor, num_classes)
     resized = tf.expand_dims(tf.image.resize_nearest_neighbor(one_hot, feat.get_shape().as_list()[1:-1]), -1)
     sorted_feats = tf.expand_dims(feat, -2)*resized #broadcast
-    sums = tf.reduce_sum(resized, [1,2])
-    mean_feats = safe_div(tf.reduce_sum(sorted_feats*resized, [1,2]), sums)
     avg_mask = tf.cast(tf.not_equal(resized, 0), tf.float32)
-    return mean_feats, avg_mask, sorted_feats, resized
-
-def img_to_patch(input_shape, patch_size):
-    patch_place = tf.placeholder(tf.uint8, input_shape, "patch_in")
-    expand = tf.expand_dims(patch_place, 0)
-    patches = sliding_window.extract_patches(expand, patch_size[0], patch_size[1])
-    return patches, patch_place
-
-def tensor_to_patch(inputs, patch_size):
-    #import pdb; pdb.set_trace()
-    input_shape = inputs.get_shape().as_list()
-    reshape_inputs = tf.reshape(inputs, [-1] + input_shape[1:3] + [np.prod(input_shape[3:])])
-    patches = sliding_window.extract_patches(reshape_inputs, patch_size[0], patch_size[1])
-    patches = tf.reshape(patches, [-1] + patch_size + input_shape[3:])
-    return patches
+    return avg_mask, sorted_feats
 
 def run_inference_graph(model, trained_checkpoint_prefix,
                         input_dict, num_images, input_shape, pad_to_shape,
@@ -178,7 +163,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     if isinstance(model._feature_extractor, resnet_ex_class):
         batch = 2
     elif isinstance(model._feature_extractor, mobilenet_ex_class):
-        batch = 4
+        batch = 1
     
     input_queue = create_input(input_dict, batch, 15, 15, 15)
     input_dict = input_queue.dequeue()
@@ -208,17 +193,11 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     # if os.path.exists(mean_file) and os.path.exists(class_mean_file):
     if os.path.exists(class_mean_file):
-        #m_k = torch.tensor(np.load(mean_file)["arr_0"])
-        class_m_k = torch.tensor(np.load(class_mean_file)["arr_0"])
+        class_m_k = np.load(class_mean_file)["arr_0"]
         first_pass = False
 
-    mean_feats, avg_mask, sorted_feats, sorted_weights = process_annot(annot_tensor, outputs[model.final_logits_key], num_classes)
-    if patch_size:
-        patches = tensor_to_patch(sorted_feats, patch_size)
-        avg_mask = tensor_to_patch(avg_mask, patch_size)
-        fetch = [patches, avg_mask]
-    else:
-        fetch = [sorted_feats, avg_mask]
+    avg_mask, sorted_feats = process_annot(annot_tensor, outputs[model.final_logits_key], num_classes)
+    fetch = [sorted_feats, avg_mask]
 
     config = tf.ConfigProto()
     config.gpu_options.allow_growth=True
@@ -248,33 +227,39 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 print("first pass")
             else:
                 print("second pass")
+                mean_sub = sorted_feats - class_m_k
+                batch_feats = tf.reshape(mean_sub, [-1, tf.shape(sorted_feats)[-1]])
+                chol, chol_update = cholesky_update(batch_feats)
+                sess.run(tf.global_variables_initializer())
             for idx in range(num_step):
-
+                
+                import pdb; pdb.set_trace()
                 start_time = timeit.default_timer()
 
                 #cache results for second pass
-                if first_pass or cache is None:
+                if first_pass:
                     res = sess.run(fetch)
-                    if cache is not None:
-                        cache.append(res)
-                else:
-                    res = cache[idx]
 
-                sorted_logits = res[0]
-                mask = res[1]
-                mean_logits = sorted_logits#res[2]
-                
-                for b in range(sorted_logits.shape[0]): #should only be 1
-                    ret = compute_stats(class_m_k, class_v_k_inv,
-                                        sorted_logits[b:b+1], mask[b:b+1],
-                                        mean_logits[b:b+1], class_k, first_pass)
-                    
-                    class_m_k, class_v_k_inv, class_k = ret
+                    sorted_logits = res[0]
+                    mask = res[1]
+                    mean_logits = sorted_logits#res[2]
+                                    
+                    for b in range(sorted_logits.shape[0]): #should only be 1
+                        # # ret = compute_stats(class_m_k, class_v_k_inv,
+                        #                     sorted_logits[b:b+1], mask[b:b+1],
+                        #                     mean_logits[b:b+1], class_k, first_pass)
+                        class_m_k, class_k = compute_mean(class_m_k, sorted_logits[b:b+1], class_k, mask[b:b+1])
+                        # class_m_k, class_k = ret
+                else:
+                    sess.run(chol_update)
+                    cur_chol = sess.run(chol)
+
+                    # import pdb; pdb.set_trace()
                 
                 # if idx > 10:
                 #     import pdb; pdb.set_trace()
-                # if idx*batch > 100:
-                #     break
+                if idx*batch > 20:
+                    break
                     
                 elapsed = timeit.default_timer() - start_time
                 print('{}) wall time: {}'.format(elapsed/batch, (idx+1)*batch))
@@ -288,7 +273,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                     import pdb; pdb.set_trace()
                 np.savez(class_mean_file, class_m_k_np)
             else:
-                class_v_k_inv_np = (class_v_k_inv/(class_k+1)).numpy()
+                import pdb; pdb.set_trace()                
+                class_v_k_inv_np = (class_v_k_inv).numpy()
                 if np.isnan(class_v_k_inv_np).any():
                     print("nan time")
                     import pdb; pdb.set_trace()

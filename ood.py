@@ -113,7 +113,7 @@ def process_logits(final_logits, mean_v, var_v, depth, pred_shape, num_classes, 
     if use_pool:
         var_brod = tf.ones_like(var)
         mean_brod = tf.ones_like(mean)
-        #import pdb; pdb.set_trace()
+        import pdb; pdb.set_trace()
         var = tf.reduce_mean(var, axis=[0,1,2,3], keepdims=True)*var_brod
         mean = tf.reduce_mean(mean, axis=[0,1,2], keepdims=True)*mean_brod
 

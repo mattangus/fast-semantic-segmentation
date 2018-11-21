@@ -1,6 +1,10 @@
 import tensorflow as tf
 import numpy as np
 
+def safe_div(a,b):
+    b = tf.ones_like(a)*b #broadcast
+    return tf.where(tf.less(tf.abs(b), 1e-7), b, a/b)
+
 def streaming_mean(variable, weights=None, has_batch=False):
     """
     Bach based streaming mean
@@ -31,12 +35,13 @@ def streaming_mean(variable, weights=None, has_batch=False):
     if batch != float(1.0):
         batch_sum = tf.reduce_sum(variable*weights, 0)
         if weights is not None:
-            weights = tf.reduce_sum(weights, 0)
+           weights = tf.reduce_sum(weights, 0)
+        
     
-    import pdb; pdb.set_trace()
     if weights is not None:
         temp = (batch_sum - m_k*batch)*weights
-        mask = tf.to_float(tf.not_equal(weights, 0))
+        #mask = tf.to_float(tf.not_equal(weights, 0))
+        mask = weights
     else:
         temp = (batch_sum - m_k*batch)
         mask = tf.ones(static_shape[1:])
@@ -44,9 +49,11 @@ def streaming_mean(variable, weights=None, has_batch=False):
     mask_batch = mask*batch
     next_counts = counts + mask_batch
 
-    selected = tf.where(init, temp, temp)
+    selected = safe_div(temp, next_counts) #tf.where(init, temp/next_counts, temp)
 
-    update_mk = tf.assign(m_k, m_k + selected/next_counts)
+    selected = tf.Print(selected, ["m_k", m_k, "n_count", next_counts, "temp", temp, "batch_sum", batch_sum, "batch", batch])
+
+    update_mk = tf.assign(m_k, m_k + selected)
     with tf.control_dependencies([update_mk]):
         update_counts = tf.assign(counts, next_counts)
     with tf.control_dependencies([update_counts]):
