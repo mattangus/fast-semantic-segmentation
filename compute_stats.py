@@ -16,26 +16,25 @@ import torch
 from sklearn.feature_extraction import image
 import copy
 
+import extractors
+
 from libs import sliding_window
 from protos import pipeline_pb2
-from builders import model_builder
+from builders import model_builder, dataset_builder
 from libs.exporter import deploy_segmentation_inference_graph
 from libs.constants import CITYSCAPES_LABEL_COLORS, CITYSCAPES_LABEL_IDS
+from libs.custom_metric import streaming_mean
 
 slim = tf.contrib.slim
+
+prefetch_queue = slim.prefetch_queue
+
+resnet_ex_class = extractors.pspnet_icnet_resnet_v1.PSPNetICNetDilatedResnet50FeatureExtractor
+mobilenet_ex_class = extractors.pspnet_icnet_mobilenet_v2.PSPNetICNetMobilenetV2FeatureExtractor
 
 flags = tf.app.flags
 
 FLAGS = flags.FLAGS
-
-tf.flags.DEFINE_string('cityscapes_dir', '',
-                       'Pattern matching ground truth images for Cityscapes.')
-
-tf.flags.DEFINE_string('input_pattern', '',
-                       'Cityscapes dataset root folder.')
-
-tf.flags.DEFINE_string('annot_pattern', '',
-                       'Pattern matching input images for Cityscapes.')
 
 flags.DEFINE_string('input_shape', '1024,2048,3', # default Cityscapes values
                     'The shape to use for inference. This should '
@@ -47,9 +46,6 @@ flags.DEFINE_string('patch_size', None, '')
 flags.DEFINE_string('pad_to_shape', '1025,2049', # default Cityscapes values
                      'Pad the input image to the specified shape. Must have '
                      'the shape specified as [height, width].')
-
-tf.flags.DEFINE_string('split_type', '',
-                       'Type of split: `train`, `test` or `val`.')
 
 flags.DEFINE_string('config_path', None,
                     'Path to a pipeline_pb2.TrainEvalPipelineConfig config '
@@ -63,19 +59,30 @@ flags.DEFINE_string('output_dir', None, 'Path to write outputs images.')
 
 flags.DEFINE_boolean('label_ids', False,
                      'Whether the output should be label ids.')
-                     
-flags.DEFINE_boolean('use_pool', False,
-                     'avg pool over spatial dims')
 
-_DEFAULT_PATTEN = {
-    'input': '*_leftImg8bit.png',
-    'label': '*_gtFine_labelTrainIds.png',
-}
+def create_input(tensor_dict,
+                batch_size,
+                batch_queue_capacity,
+                batch_queue_threads,
+                prefetch_queue_capacity):
+    
+    def cast_and_reshape(tensor_dict, dicy_key):
+        items = tensor_dict[dicy_key]
+        float_images = tf.to_float(items)
+        tensor_dict[dicy_key] = float_images
+        return tensor_dict
 
-_DEFAULT_DIR = {
-    'input': 'leftImg8bit',
-    'label': 'gtFine',
-}
+    tensor_dict = cast_and_reshape(tensor_dict,
+                    dataset_builder._IMAGE_FIELD)
+
+    batched_tensors = tf.train.batch(tensor_dict,
+        batch_size=batch_size, num_threads=batch_queue_threads,
+        capacity=batch_queue_capacity, dynamic_pad=True,
+        allow_smaller_final_batch=False)
+
+    return prefetch_queue.prefetch_queue(batched_tensors,
+        capacity=prefetch_queue_capacity,
+        dynamic_pad=False)
 
 def _valid_file_ext(input_path):
     ext = os.path.splitext(input_path)[-1].upper()
@@ -97,24 +104,6 @@ def _get_images_from_path(input_path):
         image_file_paths.append(input_path)
     return image_file_paths
 
-# def compute_stats(final_logits):
-#     #m_k = m_k-1 + (x_k - m_k-1)/k
-#     #v_k = v_k-1 + (x_k - m_k-1)*(x_k - m_k)
-#     shape = final_logits.get_shape().as_list()
-#     if shape[0] != 1:
-#         raise RuntimeError("Must have batch size of 1")
-    
-#     with tf.variable_scope("ComputeStats"):
-#         k = tf.get_variable("k", initializer=1.)
-#         mk = tf.get_variable("mk", shape[1:])
-#         mkm1 = tf.get_variable("mkm1", shape[1:])
-#         vk = tf.get_variable("vk", shape[1:])
-#         xk = final_logits[0]
-#         update_mkm1 = tf.assign(mkm1, mk)
-#         temp = (xk - mkm1)
-#         update_mk = tf.assign_add(mk, temp/k)
-#         update_vk = tf.assign_add(vk, temp*(xk - mk))
-#     return mk, vk, [update_mkm1, update_mk, update_vk]
 def b_inv(b_mat):
     eye = b_mat.new_ones(b_mat.size(-1)).diag().expand_as(b_mat)
     b_inv, _ = torch.gesv(eye, b_mat)
@@ -144,20 +133,7 @@ def compute_cov_inv(m, v_km1_inv, x_k, k, mask):
     k += mask
     return v_k_inv, k
 
-def compute_stats(m_km1, v_km1_inv, x_k, k, first_pass, mask):
-    #numpy version might be better as tf order of updates matters
-    #not sure how to control that
-    # dim = x_k.shape[-1]
-    # out_shape = list(x_k.shape) + [dim]
-    # if m_km1 is None or v_km1 is None:
-    #     return torch.tensor(x_k), torch.zeros(out_shape)
-    # x_k = torch.tensor(x_k)
-    
-    # temp = (x_k - m_km1)
-    # m_k = m_km1 + temp/k
-    # temp2 = torch.bmm(temp.view(-1, dim).unsqueeze(2), (x_k - m_k).view(-1, dim).unsqueeze(1)).view(out_shape)
-    # v_k = v_km1 + temp2 #temp*(x_k - m_k)
-    # return m_k, v_k
+def compute_stats(m_km1, v_km1_inv, x_k, mask, x_k_mean, k, first_pass):
     if first_pass:
         m_k, k = compute_mean(m_km1, x_k, k, mask)
         v_k_inv = v_km1_inv
@@ -166,16 +142,18 @@ def compute_stats(m_km1, v_km1_inv, x_k, k, first_pass, mask):
         v_k_inv, k = compute_cov_inv(m_k, v_km1_inv, x_k, k, mask)
     return m_k, v_k_inv, k
 
-def process_annot(pred_shape, feat, num_classes, use_pool):
-    annot_place = tf.placeholder(tf.uint8, pred_shape[1:-1], "annot_in")
-    one_hot = tf.one_hot(tf.expand_dims(annot_place,0), num_classes)
+def safe_div(a,b):
+    b = tf.ones_like(a)*b #broadcast
+    return tf.where(tf.less(tf.abs(b), 1e-7), b, a/b)
+
+def process_annot(annot_tensor, feat, num_classes):
+    one_hot = tf.one_hot(annot_tensor, num_classes)
     resized = tf.expand_dims(tf.image.resize_nearest_neighbor(one_hot, feat.get_shape().as_list()[1:-1]), -1)
-    sorted_feats = tf.expand_dims(feat, -2)*resized
-    if use_pool:
-        resized = tf.reduce_sum(resized, [1,2], keepdims=True)
-        sorted_feats = tf.reduce_sum(sorted_feats, [1,2], keepdims=True) / resized
+    sorted_feats = tf.expand_dims(feat, -2)*resized #broadcast
+    sums = tf.reduce_sum(resized, [1,2])
+    mean_feats = safe_div(tf.reduce_sum(sorted_feats*resized, [1,2]), sums)
     avg_mask = tf.cast(tf.not_equal(resized, 0), tf.float32)
-    return annot_place, sorted_feats, avg_mask
+    return mean_feats, avg_mask, sorted_feats, resized
 
 def img_to_patch(input_shape, patch_size):
     patch_place = tf.placeholder(tf.uint8, input_shape, "patch_in")
@@ -192,24 +170,31 @@ def tensor_to_patch(inputs, patch_size):
     return patches
 
 def run_inference_graph(model, trained_checkpoint_prefix,
-                        input_images, annot_filenames, input_shape, pad_to_shape,
-                        label_color_map, output_directory, num_classes, patch_size,
-                        use_pool):
-    effective_shape = copy.deepcopy(input_shape)
-    # if patch_size:
-    #     effective_shape[:2] = patch_size
-    #     #patches, patch_place = img_to_patch(input_shape, patch_size)
+                        input_dict, num_images, input_shape, pad_to_shape,
+                        label_color_map, output_directory, num_classes, patch_size):
+    assert len(input_shape) == 3, "input shape must be rank 3"
+    effective_shape = [None] + input_shape
+    
+    if isinstance(model._feature_extractor, resnet_ex_class):
+        batch = 2
+    elif isinstance(model._feature_extractor, mobilenet_ex_class):
+        batch = 4
+    
+    input_queue = create_input(input_dict, batch, 15, 15, 15)
+    input_dict = input_queue.dequeue()
+
+    input_tensor = input_dict[dataset_builder._IMAGE_FIELD]
+    annot_tensor = input_dict[dataset_builder._LABEL_FIELD]
+
+    input_tensor = tf.concat([input_tensor, tf.image.flip_left_right(input_tensor)], 0)
+    annot_tensor = tf.concat([annot_tensor[...,0], tf.image.flip_left_right(annot_tensor)[...,0]], 0)
 
     outputs, placeholder_tensor = deploy_segmentation_inference_graph(
         model=model,
         input_shape=effective_shape,
+        input=input_tensor,
         pad_to_shape=pad_to_shape,
         label_color_map=label_color_map)
-
-    pred_tensor = outputs[model.main_class_predictions_key]
-
-    # pl_size = np.reduce_prod(placeholder_tensor.get_shape().as_list())
-    # placeholder_tensor = tf.random_uniform(tf.shape(placeholder_tensor),maxval=pl_size)
 
     stats_dir = os.path.join(output_directory, "stats")
     class_mean_file = os.path.join(stats_dir, "class_mean.npz")
@@ -217,8 +202,6 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     x = None
     y = None
-    #m_k = None
-    #v_k_inv = None
     class_m_k = None
     class_v_k_inv = None
     first_pass = True
@@ -228,111 +211,89 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         #m_k = torch.tensor(np.load(mean_file)["arr_0"])
         class_m_k = torch.tensor(np.load(class_mean_file)["arr_0"])
         first_pass = False
+
+    mean_feats, avg_mask, sorted_feats, sorted_weights = process_annot(annot_tensor, outputs[model.final_logits_key], num_classes)
+    if patch_size:
+        patches = tensor_to_patch(sorted_feats, patch_size)
+        avg_mask = tensor_to_patch(avg_mask, patch_size)
+        fetch = [patches, avg_mask]
+    else:
+        fetch = [sorted_feats, avg_mask]
+
     config = tf.ConfigProto()
     config.gpu_options.allow_growth=True
 
     with tf.Session(config=config) as sess:
-        input_graph_def = tf.get_default_graph().as_graph_def()
         saver = tf.train.Saver(tf.global_variables())
         
-        # feats = outputs[model.final_logits_key]
-        # shape = feats.get_shape().as_list()
-        # feats = tf.reshape(feats,[-1, shape[-1]])
-        # temp = tf.constant(0, tf.float32, feats.get_shape().as_list())
-        # covar, update = tf.contrib.metrics.streaming_covariance(feats, temp)
-        # mean = [v for v in tf.get_collection(tf.GraphKeys.METRIC_VARIABLES) if "mean_prediction" in v.op.name][0]
-        # fetch += [update]
-        # sess.run(tf.global_variables_initializer())
-        # sess.run(tf.local_variables_initializer())
-        pred_shape = pred_tensor.get_shape().as_list()
-        annot_place, sorted_feats, avg_mask = process_annot(pred_shape, outputs[model.final_logits_key], num_classes, use_pool)
-        if patch_size:
-            patches = tensor_to_patch(sorted_feats, patch_size)
-            avg_mask = tensor_to_patch(avg_mask, patch_size)
-            fetch = [patches, avg_mask]
-        else:
-            fetch = [sorted_feats, avg_mask]
+        sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
+        tf.train.start_queue_runners(sess)
         saver.restore(sess, trained_checkpoint_prefix)
 
         k = None
         class_k = None
         if first_pass:
             passes = [True, False]
+            cache = None
+            #cache is too large. need to try mmap
+            #cache = []
         else:
             passes = [False] #means loaded from disk
-        
+            cache = None
+
+        num_step = num_images // batch
+
         for first_pass in passes:
             if first_pass:
                 print("first pass")
             else:
                 print("second pass")
-            for idx in range(len(input_images)):
-                image_path = input_images[idx]
-                # image_raw = np.expand_dims(cv2.imread(image_path),0)
-                image_raw = cv2.imread(image_path)
-                # annot_raw = np.expand_dims(cv2.imread(annot_filenames[idx]),0)
-                annot_raw = cv2.imread(annot_filenames[idx])
-                # import pdb; pdb.set_trace()
+            for idx in range(num_step):
 
                 start_time = timeit.default_timer()
-                for flipped in [False, True]:
-                    if flipped:
-                        image_raw = np.fliplr(image_raw)
-                        annot_raw = np.fliplr(annot_raw)
 
-                    # if patch_size:
-                    #     all_image_raw = sess.run(patches, feed_dict={patch_place: image_raw})
-                    #     all_annot_raw = sess.run(patches, feed_dict={patch_place: annot_raw})
-                    # else:
-                    #     all_image_raw = [image_raw]
-                    #     all_annot_raw = [annot_raw]
+                #cache results for second pass
+                if first_pass or cache is None:
+                    res = sess.run(fetch)
+                    if cache is not None:
+                        cache.append(res)
+                else:
+                    res = cache[idx]
 
-                    # for i in range(len(all_image_raw)):
-                    feed = {placeholder_tensor: image_raw}
-                    feed[annot_place] = annot_raw[...,0]
-                    res = sess.run(fetch,feed_dict=feed)
-                    sorted_logits = res[0]
-                    mask = res[1]
-                    #import pdb; pdb.set_trace()
-                    #m_k, v_k_inv, k = compute_stats(m_k, v_k_inv, logits, k, first_pass, mask)
-                    for b in range(sorted_logits.shape[0]): #should only be 1
-                        class_m_k, class_v_k_inv, class_k = compute_stats(class_m_k, class_v_k_inv, sorted_logits[b:b+1], class_k, first_pass, mask[b:b+1])
+                sorted_logits = res[0]
+                mask = res[1]
+                mean_logits = sorted_logits#res[2]
+                
+                for b in range(sorted_logits.shape[0]): #should only be 1
+                    ret = compute_stats(class_m_k, class_v_k_inv,
+                                        sorted_logits[b:b+1], mask[b:b+1],
+                                        mean_logits[b:b+1], class_k, first_pass)
                     
-                    # if idx > 10:
-                    #     import pdb; pdb.set_trace()
+                    class_m_k, class_v_k_inv, class_k = ret
+                
                 # if idx > 10:
+                #     import pdb; pdb.set_trace()
+                # if idx*batch > 100:
                 #     break
                     
                 elapsed = timeit.default_timer() - start_time
-                print('{}) wall time: {}'.format(elapsed, idx+1))
-
-                # m_k, v_k_inv = sess.run([mean, covar])
+                print('{}) wall time: {}'.format(elapsed/batch, (idx+1)*batch))
 
             os.makedirs(stats_dir, exist_ok=True)
 
             if first_pass:
                 class_m_k_np = class_m_k.numpy()
-                #m_k = m_k.numpy()
-                #if np.isnan(m_k).any() or np.isnan(class_m_k).any():
                 if np.isnan(class_m_k_np).any():
                     print("nan time")
                     import pdb; pdb.set_trace()
-                #np.savez(mean_file, m_k)
                 np.savez(class_mean_file, class_m_k_np)
             else:
-                #v_k = b_inv(v_k_inv)
-                #class_v_k = b_inv(class_v_k_inv)
-
                 class_v_k_inv_np = (class_v_k_inv/(class_k+1)).numpy()
-                #v_k_inv = (v_k_inv/(k+1)).numpy()
-
-                # if np.isnan(v_k_inv).any() or np.isnan(class_v_k_inv).any():
                 if np.isnan(class_v_k_inv_np).any():
                     print("nan time")
                     import pdb; pdb.set_trace()
 
                 np.savez(class_cov_file, class_v_k_inv_np)
-                # np.savez(cov_file, v_k_inv)
         # print(save_location)
         # res = 25
         # vec_pred = np.fliplr(vec_pred)
@@ -342,11 +303,6 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
 def main(_):
     assert FLAGS.output_dir, '`output_dir` missing.'
-    assert FLAGS.split_type, '`split_type` missing.'
-    assert (FLAGS.cityscapes_dir) or \
-           (FLAGS.input_pattern and FLAGS.annot_pattern), \
-           'Must specify either `cityscapes_dir` or ' \
-           '`input_pattern` and `annot_pattern`.'
 
     output_directory = FLAGS.output_dir
     tf.gfile.MakeDirs(output_directory)
@@ -372,34 +328,21 @@ def main(_):
             int(dim) if dim != '-1' else None
                 for dim in FLAGS.pad_to_shape.split(',')]
 
-    if FLAGS.cityscapes_dir:
-        search_image_files = os.path.join(FLAGS.cityscapes_dir,
-            _DEFAULT_DIR['input'], FLAGS.split_type, '*', _DEFAULT_PATTEN['input'])
-        search_annot_files = os.path.join(FLAGS.cityscapes_dir,
-            _DEFAULT_DIR['label'], FLAGS.split_type, '*', _DEFAULT_PATTEN['label'])
-        input_images = glob.glob(search_image_files)
-        annot_filenames = glob.glob(search_annot_files)
-    else:
-        input_images = glob.glob(FLAGS.input_pattern)
-        annot_filenames = glob.glob(FLAGS.annot_pattern)
-    
-    if len(input_images) != len(annot_filenames):
-        print("images: ", len(input_images))
-        print("annot: ", len(annot_filenames))
-        raise ValueError('Supplied patterns do not have image counts.')
-
-    input_images = sorted(input_images)
-    annot_filenames = sorted(annot_filenames)
-
     label_map = (CITYSCAPES_LABEL_IDS
         if FLAGS.label_ids else CITYSCAPES_LABEL_COLORS)
 
     num_classes, segmentation_model = model_builder.build(
         pipeline_config.model, is_training=False)
+    
+    input_reader = pipeline_config.train_input_reader
+    #input_reader = pipeline_config.eval_input_reader # for testing
+    input_reader.shuffle = False
+    input_reader.num_epochs = 1
+    input_dict = dataset_builder.build(input_reader)
 
     run_inference_graph(segmentation_model, FLAGS.trained_checkpoint,
-                        input_images, annot_filenames, input_shape, pad_to_shape,
-                        label_map, output_directory, num_classes, patch_size, FLAGS.use_pool)
+                        input_dict, input_reader.num_examples, input_shape, pad_to_shape,
+                        label_map, output_directory, num_classes, patch_size)
 
 if __name__ == '__main__':
     tf.app.run()

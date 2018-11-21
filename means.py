@@ -23,8 +23,13 @@ if args.cov_inv:
         cov_inv = cov_inv["arr_0"]
 else:
     cov_inv = None
+
+ed = np.expand_dims
+mean = ed(ed(mean,1),1)
+cov_inv = ed(ed(cov_inv,1),1)
+
 mean = np.swapaxes(mean, 3, 0)
-if cov_inv:
+if cov_inv is not None:
     cov_inv = np.swapaxes(cov_inv, 3, 0)
 num_class = mean.shape[0]
 
@@ -41,14 +46,14 @@ def mahal(m, cov_inv, p):
 def l2_norm(m, unused, p):
     return np.sqrt(np.sum(np.square(m-p)))
 
-if cov_inv:
+if cov_inv is not None:
     dist_fn = mahal
 else:
     dist_fn = l2_norm
 
 for i in range(num_class):
     for j in range(num_class):
-        cur_cov = cov_inv[i] if cov_inv else None
+        cur_cov = cov_inv[i] if cov_inv is not None else None
         cm[i,j] = dist_fn(mean[i], cur_cov, mean[j])
         #cm[j,i] = cm[i,j]
 

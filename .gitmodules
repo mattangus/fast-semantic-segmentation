@@ -1,0 +1,3 @@
+[submodule "submod/cholesky"]
+	path = submod/cholesky
+	url = git@github.com:mattangus/Tf-Cholesky-Update.git
