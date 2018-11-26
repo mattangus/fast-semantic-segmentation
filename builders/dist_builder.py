@@ -34,11 +34,11 @@ def _max_dist_batch(logits, labels, ignore_label, num_classes):
     #TODO: try bilinear resize!
     resized = tf.expand_dims(tf.image.resize_nearest_neighbor(one_hot, logits.get_shape().as_list()[1:-1]),-2)
     sorted_feats = tf.expand_dims(logits, -1)*resized
-    means = tf.reduce_mean(sorted_feats, axis=0) #covs = _moments(sorted_feats)
+    means = tf.reduce_sum(sorted_feats, axis=0) / tf.reduce_sum(resized,0) #covs = _moments(sorted_feats)
     n = 1.0
-    eye = tf.eye(num_classes)
+    #eye = tf.eye(num_classes)
     diffs = tf.expand_dims(means, -1) - tf.expand_dims(means, -2)
-    #not 100% sure why adding to diag makes d/d(dot) sqrt(dot) non nan
+
     sq_dist = tf.square(diffs)
     dot = tf.reduce_sum(sq_dist, -3)
     dist = safe_f(dot, tf.sqrt, safe_x=tf.zeros_like, cmp=lambda x: tf.greater(x,0.))

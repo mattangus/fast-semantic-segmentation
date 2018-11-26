@@ -60,12 +60,15 @@ flags.DEFINE_string('output_dir', None, 'Path to write outputs images.')
 flags.DEFINE_boolean('label_ids', False,
                      'Whether the output should be label ids.')
 
+flags.DEFINE_boolean('use_pool', False,
+                     'avg pool over spatial dims')
+
 def create_input(tensor_dict,
                 batch_size,
                 batch_queue_capacity,
                 batch_queue_threads,
                 prefetch_queue_capacity):
-    
+
     def cast_and_reshape(tensor_dict, dicy_key):
         items = tensor_dict[dicy_key]
         float_images = tf.to_float(items)
@@ -111,49 +114,78 @@ def b_inv(b_mat):
 
 def compute_mean(m_km1, x_k, k, mask):
     if m_km1 is None:
-        return torch.tensor(x_k), torch.ones(x_k.shape)
-    x_k = torch.tensor(x_k)
-    mask = torch.tensor(mask)
+        return torch.tensor(x_k).cuda(), torch.ones(x_k.shape).cuda()
+    x_k = torch.tensor(x_k).cuda()
+    mask = torch.tensor(mask).cuda()
     temp = (x_k - m_km1)*mask
     m_k = m_km1 + temp/k
     k += mask
     return m_k, k
 
-def compute_cov_inv(m, v_km1_inv, x_k, k, mask):
-    dim = x_k.shape[-1]
-    out_shape = list(x_k.shape[:-1]) + [dim, x_k.shape[-1]]
+# def compute_cov_inv(m, v_km1_inv, x_k, k, mask):
+#     dim = x_k.shape[-1]
+#     out_shape = list(x_k.shape[:-1]) + [dim, x_k.shape[-1]]
+#     if v_km1_inv is None:
+#         return torch.zeros(out_shape).cuda(), torch.ones(out_shape).cuda()
+#     x_k = torch.tensor(x_k).cuda()
+#     mask = torch.tensor(mask).cuda()
+#     mask = mask.unsqueeze(-1)
+#     temp = (x_k - m)
+#     sigma = torch.bmm(temp.view(-1, dim).unsqueeze(2), temp.view(-1, dim).unsqueeze(1)).view(out_shape)
+#     # try:
+#     sig_inv = torch.inverse(sigma)
+#     eye_test = torch.bmm(sig_inv[0,0,0], sigma[0,0,0])
+#     v_k_inv = sig_inv*mask + v_km1_inv
+#     # except Exception as ex:
+#     #     import pdb; pdb.set_trace()
+#     #     print("here")
+#     k += mask
+#     import pdb; pdb.set_trace()
+#     return v_k_inv, k
+
+def compute_cov_inv(m, v_km1_inv, sig_inv_k, k, mask):
+    out_shape = sig_inv_k.shape
     if v_km1_inv is None:
-        return torch.zeros(out_shape), torch.ones(out_shape)
-    x_k = torch.tensor(x_k)
-    mask = torch.tensor(mask)
-    mask = mask.unsqueeze(-1)
-    temp = (x_k - m)
-    sigma = torch.bmm(temp.view(-1, dim).unsqueeze(2), temp.view(-1, dim).unsqueeze(1)).view(out_shape)
-    v_k_inv = b_inv(sigma)*mask + v_km1_inv
+        return torch.zeros(out_shape).cuda(), torch.ones(out_shape).cuda()
+    sig_inv_k = torch.tensor(sig_inv_k).cuda()
+    v_k_inv = sig_inv_k + v_km1_inv
     k += mask
     return v_k_inv, k
 
-def compute_stats(m_km1, v_km1_inv, x_k, mask, x_k_mean, k, first_pass):
+def compute_stats(m_km1, v_km1_inv, x_k, mask, sig, k, first_pass):
     if first_pass:
         m_k, k = compute_mean(m_km1, x_k, k, mask)
         v_k_inv = v_km1_inv
     else:
         m_k = m_km1
-        v_k_inv, k = compute_cov_inv(m_k, v_km1_inv, x_k, k, mask)
+        v_k_inv, k = compute_mean(v_km1_inv, sig, k, np.expand_dims(mask, -1))
     return m_k, v_k_inv, k
 
 def safe_div(a,b):
     b = tf.ones_like(a)*b #broadcast
     return tf.where(tf.less(tf.abs(b), 1e-7), b, a/b)
 
-def process_annot(annot_tensor, feat, num_classes):
+def do_cov_inv(feats, mean, mask):
+    temp = feats - mean
+    sigma = tf.matmul(tf.expand_dims(temp, -1), tf.expand_dims(temp, -2))*tf.expand_dims(mask,-1)
+    #sig_inv = tf.linalg.inv(sigma)*tf.expand_dims(mask,-1)
+    return sigma#, sig_inv
+
+
+def process_annot(annot_tensor, feat, mean, num_classes):
     one_hot = tf.one_hot(annot_tensor, num_classes)
     resized = tf.expand_dims(tf.image.resize_nearest_neighbor(one_hot, feat.get_shape().as_list()[1:-1]), -1)
-    sorted_feats = tf.expand_dims(feat, -2)*resized #broadcast
+    sorted_feats = tf.expand_dims(feat, -2)*resized
     sums = tf.reduce_sum(resized, [1,2])
     mean_feats = safe_div(tf.reduce_sum(sorted_feats*resized, [1,2]), sums)
-    avg_mask = tf.cast(tf.not_equal(resized, 0), tf.float32)
-    return mean_feats, avg_mask, sorted_feats, resized
+    mean_feats = tf.expand_dims(tf.expand_dims(mean_feats, 1), 1)
+    sorted_mask = tf.cast(tf.not_equal(resized, 0), tf.float32)
+    mean_mask = tf.cast(tf.not_equal(sums, 0), tf.float32)
+
+    # sorted_sig = do_cov_inv(sorted_feats, mean, sorted_mask)
+    # mean_sig = do_cov_inv(mean_feats, mean, mean_mask)
+
+    return mean_feats, mean_mask, sorted_feats, sorted_mask
 
 def img_to_patch(input_shape, patch_size):
     patch_place = tf.placeholder(tf.uint8, input_shape, "patch_in")
@@ -174,12 +206,14 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                         label_color_map, output_directory, num_classes, patch_size):
     assert len(input_shape) == 3, "input shape must be rank 3"
     effective_shape = [None] + input_shape
-    
+
     if isinstance(model._feature_extractor, resnet_ex_class):
-        batch = 2
+        batch = 1
     elif isinstance(model._feature_extractor, mobilenet_ex_class):
-        batch = 4
-    
+        batch = 1
+
+    use_pool = FLAGS.use_pool
+
     input_queue = create_input(input_dict, batch, 15, 15, 15)
     input_dict = input_queue.dequeue()
 
@@ -209,25 +243,34 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     # if os.path.exists(mean_file) and os.path.exists(class_mean_file):
     if os.path.exists(class_mean_file):
         #m_k = torch.tensor(np.load(mean_file)["arr_0"])
-        class_m_k = torch.tensor(np.load(class_mean_file)["arr_0"])
+        class_m_k = np.load(class_mean_file)["arr_0"]
         first_pass = False
+        mean_p = tf.placeholder(tf.float32, class_m_k.shape, "mean_placeholder")
+    else:
+        mean_p = tf.placeholder(tf.float32, tf.shape(outputs[model.final_logits_key]), "mean_placeholder")
 
-    mean_feats, avg_mask, sorted_feats, sorted_weights = process_annot(annot_tensor, outputs[model.final_logits_key], num_classes)
+    mean_feats, mean_mask, sorted_feats, sorted_mask = process_annot(annot_tensor, outputs[model.final_logits_key], mean_p, num_classes)
     if patch_size:
         patches = tensor_to_patch(sorted_feats, patch_size)
-        avg_mask = tensor_to_patch(avg_mask, patch_size)
-        fetch = [patches, avg_mask]
+        sorted_mask = tensor_to_patch(sorted_mask, patch_size)
+        fetch = [patches, sorted_mask]
     else:
-        fetch = [sorted_feats, avg_mask]
+        fetch = [sorted_feats, sorted_mask]
+
+    if use_pool:
+        fetch = [mean_feats, mean_mask]
 
     config = tf.ConfigProto()
     config.gpu_options.allow_growth=True
 
+    full_eye = None
+    coord = tf.train.Coordinator()
+
     with tf.Session(config=config) as sess:
         saver = tf.train.Saver(tf.global_variables())
-        
+
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        tf.train.start_queue_runners(sess)
+        tf.train.start_queue_runners(sess,coord=coord)
         saver.restore(sess, trained_checkpoint_prefix)
 
         k = None
@@ -243,57 +286,72 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
         num_step = num_images // batch
 
-        for first_pass in passes:
-            if first_pass:
-                print("first pass")
+        #TODO: fix passes bug
+        #for first_pass in passes:
+        if first_pass:
+            print("first pass")
+        else:
+            print("second pass")
+            fetch = [sorted_feats, sorted_mask] #always get these two on second pass
+        for idx in range(num_step):
+
+            start_time = timeit.default_timer()
+
+            #cache results for second pass
+            if first_pass or cache is None:
+                res = sess.run(fetch, {mean_p: class_m_k})
+                if cache is not None:
+                    cache.append(res)
             else:
-                print("second pass")
-            for idx in range(num_step):
+                res = cache[idx]
 
-                start_time = timeit.default_timer()
+            logits = res[0]
+            mask = res[1]
+            sig = res[2]
+            for b in range(logits.shape[0]): #should only be 1
+                ret = compute_stats(class_m_k, class_v_k_inv,
+                                    logits[b:b+1], mask[b:b+1], sig[b:b+1], class_k, first_pass)
 
-                #cache results for second pass
-                if first_pass or cache is None:
-                    res = sess.run(fetch)
-                    if cache is not None:
-                        cache.append(res)
-                else:
-                    res = cache[idx]
+                class_m_k, class_v_k_inv, class_k = ret
+            
+            if full_eye is None:
+                full_eye = tf.eye(num_classes, batch_shape=class_v_k_inv.shape[:-2])
 
-                sorted_logits = res[0]
-                mask = res[1]
-                mean_logits = sorted_logits#res[2]
-                
-                for b in range(sorted_logits.shape[0]): #should only be 1
-                    ret = compute_stats(class_m_k, class_v_k_inv,
-                                        sorted_logits[b:b+1], mask[b:b+1],
-                                        mean_logits[b:b+1], class_k, first_pass)
-                    
-                    class_m_k, class_v_k_inv, class_k = ret
-                
-                # if idx > 10:
-                #     import pdb; pdb.set_trace()
-                # if idx*batch > 100:
-                #     break
-                    
-                elapsed = timeit.default_timer() - start_time
-                print('{}) wall time: {}'.format(elapsed/batch, (idx+1)*batch))
+            # if idx > 10:
+            #     import pdb; pdb.set_trace()
+            # if idx*batch > 5:
+            #     break
 
-            os.makedirs(stats_dir, exist_ok=True)
+            elapsed = timeit.default_timer() - start_time
+            print('{}) wall time: {}'.format(elapsed/batch, (idx+1)*batch))
+        coord.request_stop()
+        if not first_pass:
+            to_inv_pl = tf.placeholder(tf.float32, class_v_k_inv.shape)
+            do_inv = tf.linalg.inv(to_inv_pl)
+            try:
+                class_v_k_inv = sess.run(do_inv, {to_inv_pl: class_v_k_inv.cpu().numpy()})
+            except Exception as ex:
+                print(ex)
+                import pdb; pdb.set_trace()
+                print("here")
 
-            if first_pass:
-                class_m_k_np = class_m_k.numpy()
-                if np.isnan(class_m_k_np).any():
-                    print("nan time")
-                    import pdb; pdb.set_trace()
-                np.savez(class_mean_file, class_m_k_np)
-            else:
-                class_v_k_inv_np = (class_v_k_inv/(class_k+1)).numpy()
-                if np.isnan(class_v_k_inv_np).any():
-                    print("nan time")
-                    import pdb; pdb.set_trace()
 
-                np.savez(class_cov_file, class_v_k_inv_np)
+    os.makedirs(stats_dir, exist_ok=True)
+
+    if first_pass:
+        class_m_k_np = class_m_k.numpy()
+        if np.isnan(class_m_k_np).any():
+            print("nan time")
+            import pdb; pdb.set_trace()
+        np.savez(class_mean_file, class_m_k_np)
+    else:
+        class_v_k_inv_np = class_v_k_inv
+        import pdb; pdb.set_trace()
+        if np.isnan(class_v_k_inv_np).any():
+            print("nan time")
+            import pdb; pdb.set_trace()
+
+        np.savez(class_cov_file, class_v_k_inv_np)
         # print(save_location)
         # res = 25
         # vec_pred = np.fliplr(vec_pred)
@@ -333,7 +391,7 @@ def main(_):
 
     num_classes, segmentation_model = model_builder.build(
         pipeline_config.model, is_training=False)
-    
+
     input_reader = pipeline_config.train_input_reader
     #input_reader = pipeline_config.eval_input_reader # for testing
     input_reader.shuffle = False
