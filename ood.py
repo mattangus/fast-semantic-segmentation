@@ -108,40 +108,47 @@ def _get_images_from_path(input_path):
 def nan_to_num(val):
     return tf.where(tf.is_nan(val), tf.zeros_like(val), val)
 
-def process_logits_l2(final_logits, mean_v, var_v, depth, pred_shape, num_classes):
-    print("WARNING: Using l2 norm. not mahalanobis distance")
-    mean_p = tf.placeholder(tf.float32, mean_v.shape, "mean")
-    var_p = tf.placeholder(tf.float32, var_v.shape, "var")
-    var = var_p
-    mean = mean_p
+# def process_logits_l2(final_logits, mean_v, var_v, depth, pred_shape, num_classes, use_pool):
+#     print("WARNING: Using l2 norm. not mahalanobis distance")
+#     mean_p = tf.placeholder(tf.float32, mean_v.shape, "mean")
+#     var_inv_p = tf.placeholder(tf.float32, var_v.shape, "var_inv")
+#     var_inv = var_inv_p
+#     mean = mean_p
 
-    in_shape = final_logits.get_shape().as_list() 
-    var = tf.reshape(var, [-1, in_shape[-1], in_shape[-1]])
-    mean = tf.reshape(mean, [-1, num_classes, in_shape[-1]])
+#     if use_pool:
+#         var_brod = tf.ones_like(var_inv)
+#         mean_brod = tf.ones_like(mean)
+#         #import pdb; pdb.set_trace()
+#         var_inv = tf.reduce_mean(var_inv, axis=[0,1,2], keepdims=True)*var_brod
+#         mean = tf.reduce_mean(mean, axis=[0,1,2], keepdims=True)*mean_brod
 
-    final_logits = tf.reshape(final_logits, [-1, depth])
+#     in_shape = final_logits.get_shape().as_list() 
+#     var_inv = tf.reshape(var_inv, [-1, in_shape[-1], in_shape[-1]])
+#     mean = tf.reshape(mean, [-1, num_classes, in_shape[-1]])
+
+#     final_logits = tf.reshape(final_logits, [-1, depth])
     
-    mean_sub = tf.expand_dims(final_logits,-2) - mean
+#     mean_sub = tf.expand_dims(final_logits,-2) - mean
 
-    dist = tf.reduce_sum(tf.square(mean_sub),1)
+#     dist = tf.reduce_sum(tf.square(mean_sub),1)
 
-    img_dist = tf.expand_dims(tf.reshape(dist, in_shape[1:-1] + [num_classes]), 0)
-    img_dist = tf.where(tf.equal(img_dist, tf.zeros_like(img_dist)), tf.ones_like(img_dist)*float("inf"), img_dist)
-    full_dist = tf.image.resize_bilinear(img_dist, (pred_shape[1],pred_shape[2]))
-    dist_class = tf.argmin(full_dist, -1)
-    min_dist = tf.reduce_min(full_dist, -1)
-    # scaled_dist = full_dist/tf.reduce_max(full_dist)
-    # dist_out = (scaled_dist*255).astype(np.uint8)
-    return dist_class, full_dist, min_dist, mean_p, var_p #, [temp, temp2, left, dist, img_dist]
+#     img_dist = tf.expand_dims(tf.reshape(dist, in_shape[1:-1] + [num_classes]), 0)
+#     img_dist = tf.where(tf.equal(img_dist, tf.zeros_like(img_dist)), tf.ones_like(img_dist)*float("inf"), img_dist)
+#     full_dist = tf.image.resize_bilinear(img_dist, (pred_shape[1],pred_shape[2]))
+#     dist_class = tf.argmin(full_dist, -1)
+#     min_dist = tf.reduce_min(full_dist, -1)
+#     # scaled_dist = full_dist/tf.reduce_max(full_dist)
+#     # dist_out = (scaled_dist*255).astype(np.uint8)
+#     return dist_class, full_dist, min_dist, mean_p, var_inv_p #, [temp, temp2, left, dist, img_dist]
 
-def process_logits(final_logits, mean_v, var_v, depth, pred_shape, num_classes, use_pool):
+def process_logits(final_logits, mean_v, var_inv_v, depth, pred_shape, num_classes, use_pool):
     mean_p = tf.placeholder(tf.float32, mean_v.shape, "mean")
-    var_p = tf.placeholder(tf.float32, var_v.shape, "var")
-    var = var_p
+    var_inv_p = tf.placeholder(tf.float32, var_inv_v.shape, "var_inv")
+    var_inv = var_inv_p
     mean = mean_p
 
     if use_pool:
-        var_brod = tf.ones_like(var)
+        var_brod = tf.ones_like(var_inv)
         mean_brod = tf.ones_like(mean)
         # import pdb; pdb.set_trace()
         var = tf.reduce_sum(var, axis=[0,1,2], keepdims=True)*var_brod
@@ -150,7 +157,7 @@ def process_logits(final_logits, mean_v, var_v, depth, pred_shape, num_classes, 
     #import pdb; pdb.set_trace()
 
     in_shape = final_logits.get_shape().as_list() 
-    var = tf.reshape(var, [-1, in_shape[-1], in_shape[-1]])
+    var_inv = tf.reshape(var_inv, [-1, in_shape[-1], in_shape[-1]])
     mean = tf.reshape(mean, [-1, num_classes, in_shape[-1]])
 
     final_logits = tf.reshape(final_logits, [-1, depth])
@@ -158,8 +165,8 @@ def process_logits(final_logits, mean_v, var_v, depth, pred_shape, num_classes, 
     mean_sub = tf.expand_dims(final_logits,-2) - mean
     mean_sub = tf.expand_dims(tf.reshape(mean_sub, [-1, in_shape[-1]]), 1)
 
-    #var = tf.tile(var,[np.prod(in_shape[1:3]), 1, 1])
-    left = tf.matmul(mean_sub, var)
+    #var_inv = tf.tile(var_inv,[np.prod(in_shape[1:3]), 1, 1])
+    left = tf.matmul(mean_sub, var_inv)
     dist = tf.squeeze(tf.matmul(left, mean_sub, transpose_b=True))
 
     img_dist = tf.expand_dims(tf.reshape(dist, in_shape[1:-1] + [num_classes]), 0)
@@ -169,7 +176,7 @@ def process_logits(final_logits, mean_v, var_v, depth, pred_shape, num_classes, 
     min_dist = tf.reduce_min(full_dist, -1)
     # scaled_dist = full_dist/tf.reduce_max(full_dist)
     # dist_out = (scaled_dist*255).astype(np.uint8)
-    return dist_class, full_dist, min_dist, mean_p, var_p #, [temp, temp2, left, dist, img_dist]
+    return dist_class, full_dist, min_dist, mean_p, var_inv_p #, [temp, temp2, left, dist, img_dist]
 
 def get_miou(labels,
              predictions,
@@ -216,17 +223,16 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     print("loading means and covs")
     mean = np.load(class_mean_file)["arr_0"]
-    var = np.load(class_cov_file)["arr_0"]
+    var_inv = np.load(class_cov_file)["arr_0"]
     print("done loading")
-    var_dims = list(var.shape[-2:])
+    var_dims = list(var_inv.shape[-2:])
     mean_dims = list(mean.shape[-2:])
     depth = mean_dims[-1]
     
     #mean = np.reshape(mean, [-1] + mean_dims)
-    #var = np.reshape(var, [-1] + var_dims)
-
+    #var_inv = np.reshape(var_inv, [-1] + var_dims)
     
-    dist_class, full_dist, min_dist, mean_p, var_p  = process_logits(final_logits, mean, var, depth, pred_tensor.get_shape().as_list(), num_classes, use_pool)
+    dist_class, full_dist, min_dist, mean_p, var_inv_p  = process_logits(final_logits, mean, var_inv, depth, pred_tensor.get_shape().as_list(), num_classes, use_pool)
     dist_colour = _map_to_colored_labels(dist_class, pred_tensor.get_shape().as_list(), label_color_map)
     pred_colour = _map_to_colored_labels(pred_tensor, pred_tensor.get_shape().as_list(), label_color_map)
 
@@ -238,7 +244,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     iou_update = tf.group([pred_update, dist_update])
 
     mean = np.reshape(mean, mean_p.get_shape().as_list())
-    var = np.reshape(var, var_p.get_shape().as_list())
+    var_inv = np.reshape(var_inv, var_inv_p.get_shape().as_list())
 
     fetch = [input_name, pred_tensor, pred_colour, dist_colour, dist_class, full_dist, min_dist, iou_update]
     
