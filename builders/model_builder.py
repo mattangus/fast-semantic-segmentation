@@ -20,6 +20,7 @@ def _build_pspnet_icnet_extractor(
         feature_extractor_config, filter_scale, is_training,
         mid_downsample=False, reuse_weights=None):
     feature_type = feature_extractor_config.type
+    depth_multiplier = feature_extractor_config.depth_multiplier
 
     if feature_type not in PSPNET_ICNET_FEATURE_EXTRACTER:
         raise ValueError('Unknown ICNet feature_extractor: {}'.format(
@@ -31,7 +32,8 @@ def _build_pspnet_icnet_extractor(
                                    batch_norm_trainable=is_training,
                                    filter_scale=filter_scale,
                                    mid_downsample=mid_downsample,
-                                   reuse_weights=reuse_weights)
+                                   reuse_weights=reuse_weights,
+                                   depth_multiplier=depth_multiplier)
 
 def _build_pspnet_icnet_model(model_config, is_training, add_summaries,
                               build_baseline_psp=False):

@@ -16,7 +16,7 @@ import cv2
 from protos import pipeline_pb2
 from builders import model_builder, dataset_builder
 from libs.exporter import deploy_segmentation_inference_graph, _map_to_colored_labels
-from libs.constants import CITYSCAPES_LABEL_COLORS, CITYSCAPES_LABEL_IDS
+from libs.constants import CITYSCAPES_LABEL_COLORS, CITYSCAPES_LABEL_IDS, URSA_LABEL_COLORS
 from libs.metrics import mean_iou
 
 slim = tf.contrib.slim
@@ -269,12 +269,12 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             #import pdb; pdb.set_trace()
             #full_dist_out = full_dist_out/np.nanmax(full_dist_out)
 
-            # for i in range(num_classes):
-            #     temp = full_dist_out[:,:,i]
-            #     temp[np.logical_not(np.isfinite(temp))] = 0
-            #     temp = temp/np.max(temp)
-            #     cv2.imshow(str(i), temp)
-            # cv2.waitKey()
+            for i in range(num_classes):
+                temp = full_dist_out[:,:,i]
+                temp[np.logical_not(np.isfinite(temp))] = 0
+                temp = temp/np.max(temp)
+                cv2.imshow(str(i), temp)
+            cv2.waitKey()
             # import pdb; pdb.set_trace()
             # scaled_dist = full_dist/np.max(full_dist)
             # dist_out = (scaled_dist*255).astype(np.uint8)
@@ -344,7 +344,7 @@ def main(_):
                 for dim in FLAGS.pad_to_shape.split(',')]
 
     label_map = (CITYSCAPES_LABEL_IDS
-        if FLAGS.label_ids else CITYSCAPES_LABEL_COLORS)
+        if FLAGS.label_ids else URSA_LABEL_COLORS)
 
     num_classes, segmentation_model = model_builder.build(
         pipeline_config.model, is_training=False)

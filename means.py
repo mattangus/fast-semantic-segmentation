@@ -7,12 +7,15 @@ from sklearn.decomposition import PCA
 from mpl_toolkits.mplot3d import Axes3D
 import os
 
+ed = np.expand_dims
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--mean", type=str, required=True)
 parser.add_argument("--cov_inv", type=str, default=None)
 #parser.add_argument("--output", type=str, required=True)
 
 args = parser.parse_args()
+# import pdb; pdb.set_trace()
 
 mean = np.load(args.mean)
 if "npz" in args.mean:
@@ -21,6 +24,7 @@ if args.cov_inv:
     cov_inv = np.load(args.cov_inv)
     if "npz" in args.cov_inv:
         cov_inv = cov_inv["arr_0"]
+    #cov_inv = ed(ed(cov_inv,1),1)
 else:
     cov_inv = None
 
