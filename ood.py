@@ -273,19 +273,16 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             # scaled_dist = full_dist/np.max(full_dist)
             # dist_out = (scaled_dist*255).astype(np.uint8)
             elapsed = timeit.default_timer() - start_time
-            print('{0:.4f} iter: {1}, pred iou: {2:.6f}, dist iou: {3:.6f}'.format(elapsed, idx+1, pred_miou_v, dist_miou_v), end="\r")
+            end = "\r"
+            if idx % 50 == 0:
+                #every now and then do regular print
+                end = "\n"
+            print('{0:.4f} iter: {1}, pred iou: {2:.6f}, dist iou: {3:.6f}'.format(elapsed, idx+1, pred_miou_v, dist_miou_v), end=end)
 
             if FLAGS.write_out:
                 predictions = res[1]
                 prediction_colour = res[2]
-                # logits_output = res[1]
-                # in_shape = logits_output.shape
-                # logits_output = np.reshape(logits_output, [-1, depth])
-                # temp = logits_output - mean
-                # left = temp * np.nan_to_num(1./var)
-                # dist = inner1d(left, temp)
-                # img_dist = np.reshape(dist, in_shape[1:-1])
-                # full_dist = cv2.resize(img_dist, (predictions.shape[2],predictions.shape[1]), interpolation=cv2.INTER_LINEAR)
+                
                 dist_out = res[3][0].astype(np.uint8)
                 full_dist_out = res[5][0]
                 min_dist_out = res[6][0]
@@ -309,7 +306,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 cv2.imwrite(save_location, prediction_colour)
                 cv2.imwrite(min_filename, min_dist)
                 cv2.imwrite(dist_filename, dist_out)
-    print('{0:.4f} iter: {1}, pred iou: {2:.6f}, dist iou: {3:.6f}'.format(elapsed, idx+1, pred_miou_v, dist_miou_v))
+        print('{0:.4f} iter: {1}, pred iou: {2:.6f}, dist iou: {3:.6f}'.format(elapsed, idx+1, pred_miou_v, dist_miou_v))
 
 
 def main(_):

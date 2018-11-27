@@ -111,7 +111,7 @@ class MeanComputer(StatComputer):
         return self.update
     
     def save_variable(self, sess, file_name):
-        mean_value = sess.run(self.weights)
+        mean_value = sess.run(self.mean)
         if np.isnan(mean_value).any():
             print("nan time")
             import pdb; pdb.set_trace()
@@ -227,8 +227,12 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             sess.run(update_op)
 
             elapsed = timeit.default_timer() - start_time
-            print('{0:.4f} wall time: {1}'.format(elapsed/batch, (idx+1)*batch), end="\r")
-
+            end = "\r"
+            if idx % 50 == 0:
+                #every now and then do regular print
+                end = "\n"
+            print('{0:.4f} wall time: {1}'.format(elapsed/batch, (idx+1)*batch), end=end)
+        print('{0:.4f} wall time: {1}'.format(elapsed/batch, (idx+1)*batch))
         os.makedirs(stats_dir, exist_ok=True)
 
         stat_computer.save_variable(sess, output_file)
@@ -270,6 +274,7 @@ def main(_):
     num_classes, segmentation_model = model_builder.build(
         pipeline_config.model, is_training=False)
 
+    #input_reader = pipeline_config.eval_input_reader
     input_reader = pipeline_config.train_input_reader
     input_reader.shuffle = False
     input_reader.num_epochs = 1
