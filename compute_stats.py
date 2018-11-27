@@ -288,12 +288,7 @@ def main(_):
 
     #input_reader = pipeline_config.eval_input_reader
     input_reader = pipeline_config.train_input_reader
-<<<<<<< HEAD
-    #input_reader = pipeline_config.eval_input_reader # for testing
-    input_reader.shuffle = True
-=======
     input_reader.shuffle = False
->>>>>>> 1c0e60eef5e995dd6304b9c06eabb9e6f8880677
     input_reader.num_epochs = 1
     input_dict = dataset_builder.build(input_reader)
 
