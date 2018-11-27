@@ -16,6 +16,7 @@ import torch
 from sklearn.feature_extraction import image
 import copy
 import tensorflow_probability as tfp
+from abc import ABC, abstractmethod
 
 import extractors
 
@@ -86,80 +87,69 @@ def create_input(tensor_dict,
         capacity=prefetch_queue_capacity,
         dynamic_pad=False)
 
-def _valid_file_ext(input_path):
-    ext = os.path.splitext(input_path)[-1].upper()
-    return ext in ['.JPG', '.JPEG', '.PNG']
-
-def safe_div(a,b, thresh = 1e-7):
-    b = tf.broadcast_to(a, tf.shape(b)) #broadcast
-    return tf.where(tf.less(tf.abs(b), thresh), b, a/b)
-
-def _get_images_from_path(input_path):
-    image_file_paths = []
-    if os.path.isdir(input_path):
-        for dirpath,_,filenames in os.walk(input_path):
-            for f in filenames:
-                file_path = os.path.abspath(os.path.join(dirpath, f))
-                if not _valid_file_ext(file_path):
-                    raise ValueError('File must be JPG or PNG.')
-                image_file_paths.append(file_path)
-    else:
-        if not _valid_file_ext(input_path):
-            raise ValueError('File must be JPG or PNG.')
-        image_file_paths.append(input_path)
-    return image_file_paths
-
-def p_inv(matrix):
+class StatComputer(ABC):
     
-    """Returns the Moore-Penrose pseudo-inverse"""
-    import pdb; pdb.set_trace()
-    s, u, v = tf.svd(matrix)
+    @abstractmethod
+    def get_update_op(self):
+        pass
     
-    s_inv = tf.matrix_diag(safe_div(float(1),s))
+    @abstractmethod
+    def save_variable(self, sess, stat_dir):
+        pass
 
-    perm = list(range(len(u.get_shape())))
-    perm[-1], perm[-2] = perm[-2], perm[-1]
+class MeanComputer(StatComputer):
 
-    #v s^-1 u^T
-    return tf.matmul(v, tf.matmul(s_inv, tf.transpose(u, perm)))
+    def __init__(self, values, weights):
+        self.values = values
+        self.weights = weights
 
-# def b_inv(b_mat):
-#     eye = b_mat.new_ones(b_mat.size(-1)).diag().expand_as(b_mat)
-#     b_inv, _ = torch.gesv(eye, b_mat)
-#     return b_inv
+        with tf.variable_scope("MeanComputer"):
+            self.mean, self.update = streaming_mean(self.values, self.weights, True)
+            self.mean = tf.expand_dims(self.mean,0)
+    
+    def get_update_op(self):
+        return self.update
+    
+    def save_variable(self, sess, file_name):
+        mean_value = sess.run(self.weights)
+        if np.isnan(mean_value).any():
+            print("nan time")
+            import pdb; pdb.set_trace()
+        print("saving to", file_name)
+        np.savez(file_name, mean_value)
 
-def compute_mean(m_km1, x_k, k, mask):
-    if m_km1 is None:
-        return torch.tensor(x_k), torch.ones(x_k.shape)
-    x_k = torch.tensor(x_k)
-    mask = torch.tensor(mask)
-    temp = (x_k - m_km1)*mask
-    m_k = m_km1 + temp/k
-    k += mask
-    return m_k, k
+class CovComputer(StatComputer):
 
-# def compute_cov_inv(m, v_km1_inv, x_k, k, mask):
-#     dim = x_k.shape[-1]
-#     out_shape = list(x_k.shape[:-1]) + [dim, x_k.shape[-1]]
-#     if v_km1_inv is None:
-#         return torch.zeros(out_shape), torch.ones(out_shape)
-#     x_k = torch.tensor(x_k)
-#     mask = torch.tensor(mask)
-#     mask = mask.unsqueeze(-1)
-#     temp = (x_k - m)
-#     sigma = torch.bmm(temp.view(-1, dim).unsqueeze(2), temp.view(-1, dim).unsqueeze(1)).view(out_shape)
-#     v_k_inv = b_inv(sigma)*mask + v_km1_inv
-#     k += mask
-#     return v_k_inv, k
+    def __init__(self, values, mask, mean):
+        self.values = values
+        self.mask = mask
+        self.mean = mean
 
-# def compute_stats(m_km1, v_km1_inv, x_k, mask, x_k_mean, k, first_pass):
-#     if first_pass:
-#         m_k, k = compute_mean(m_km1, x_k, k, mask)
-#         v_k_inv = v_km1_inv
-#     else:
-#         m_k = m_km1
-#         v_k_inv, k = compute_cov_inv(m_k, v_km1_inv, x_k, k, mask)
-#     return m_k, v_k_inv, k
+        self.mean_sub = values - mean
+        self.batch_values = tf.reshape(self.mean_sub, [-1, tf.shape(values)[-1]])
+        self.batch_mask = tf.reshape(mask, [-1])
+        self.chol, self.chol_update = cholesky_update(self.batch_values, self.batch_mask, init=float(1.0))
+    
+    def get_update_op(self):
+        return self.chol_update
+    
+    def save_variable(self, sess, file_name):
+        def inv_fn(chol_mat):
+            cov = tf.matmul(tf.transpose(chol_mat,[0,2,1]),chol_mat)
+            inv_cov = tf.linalg.inv(cov)
+            return inv_cov
+        target_shape = self.values.get_shape().as_list()
+        num_split = target_shape[0]
+        chol_list = tf.split(self.chol, num_split, 0)
+        inv_list = [inv_fn(c) for c in chol_list]
+        class_cov_inv = np.concatenate([sess.run(i) for i in inv_list])
+        class_cov_inv = np.mean(np.reshape(class_cov_inv, target_shape + [target_shape[-1]]), 0, keepdims=True)
+        
+        if np.isnan(class_cov_inv).any():
+            print("nan time")
+            import pdb; pdb.set_trace()
+        print("saving to", file_name)
+        np.savez(file_name, class_cov_inv)
 
 def process_annot(annot_tensor, feat, num_classes):
     one_hot = tf.one_hot(annot_tensor, num_classes)
@@ -199,20 +189,24 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     class_mean_file = os.path.join(stats_dir, "class_mean.npz")
     class_cov_file = os.path.join(stats_dir, "class_cov_inv.npz")
 
-    x = None
-    y = None
-    class_m_k = None
-    class_v_k_inv = None
     first_pass = True
+    avg_mask, sorted_feats = process_annot(annot_tensor, outputs[model.final_logits_key], num_classes)
 
     # if os.path.exists(mean_file) and os.path.exists(class_mean_file):
     if os.path.exists(class_mean_file):
-        class_m_k = np.load(class_mean_file)["arr_0"]
+        class_mean_v = np.load(class_mean_file)["arr_0"]
         first_pass = False
+        stat_computer = CovComputer(sorted_feats, avg_mask, class_mean_v)
+        output_file = class_cov_file
+        print("second_pass")
+    else:
+        stat_computer = MeanComputer(sorted_feats, avg_mask)
+        output_file = class_mean_file
+        print("first_pass")
 
-    avg_mask, sorted_feats = process_annot(annot_tensor, outputs[model.final_logits_key], num_classes)
-    fetch = [sorted_feats, avg_mask]
+    update_op = stat_computer.get_update_op()
 
+    coord = tf.train.Coordinator()
     config = tf.ConfigProto()
     config.gpu_options.allow_growth=True
 
@@ -220,100 +214,27 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         saver = tf.train.Saver(tf.global_variables())
 
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        tf.train.start_queue_runners(sess)
+        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
         saver.restore(sess, trained_checkpoint_prefix)
 
         k = None
         class_k = None
-        if first_pass:
-            passes = [True, False]
-            cache = None
-            #cache is too large. need to try mmap
-            #cache = []
-        else:
-            passes = [False] #means loaded from disk
-            cache = None
 
         num_step = num_images // batch
+        for idx in range(num_step):
+            start_time = timeit.default_timer()
 
-        for first_pass in passes:
-            if first_pass:
-                print("first pass")
-            else:
-                print("second pass")
-                mean_sub = sorted_feats - class_m_k
-                batch_feats = tf.reshape(mean_sub, [-1, tf.shape(sorted_feats)[-1]])
-                batch_mask = tf.reshape(avg_mask, [-1])
-                chol, chol_update = cholesky_update(batch_feats, batch_mask)
-                sess.run(tf.global_variables_initializer())
-            for idx in range(num_step):
-                start_time = timeit.default_timer()
+            sess.run(update_op)
 
-                #cache results for second pass
-                if first_pass:
-                    res = sess.run(fetch)
+            elapsed = timeit.default_timer() - start_time
+            print('{0:.4f} wall time: {1}'.format(elapsed/batch, (idx+1)*batch), end="\r")
 
-                    sorted_logits = res[0]
-                    mask = res[1]
-                    mean_logits = sorted_logits#res[2]
+        os.makedirs(stats_dir, exist_ok=True)
 
-                    for b in range(sorted_logits.shape[0]): #should only be 1
-                        # # ret = compute_stats(class_m_k, class_v_k_inv,
-                        #                     sorted_logits[b:b+1], mask[b:b+1],
-                        #                     mean_logits[b:b+1], class_k, first_pass)
-                        class_m_k, class_k = compute_mean(class_m_k, sorted_logits[b:b+1], class_k, mask[b:b+1])
-                        # class_m_k, class_k = ret
-                else:
-                    sess.run(chol_update)
-                    #cur_chol = sess.run(chol)
+        stat_computer.save_variable(sess, output_file)
 
-                    # import pdb; pdb.set_trace()
-
-                # if idx > 10:
-                #     import pdb; pdb.set_trace()
-                # if idx*batch > 50:
-                #     break
-
-                elapsed = timeit.default_timer() - start_time
-                print('{}) wall time: {}'.format(elapsed/batch, (idx+1)*batch))
-
-            os.makedirs(stats_dir, exist_ok=True)
-
-            if first_pass:
-                class_m_k_np = class_m_k.numpy()
-                if np.isnan(class_m_k_np).any():
-                    print("nan time")
-                    import pdb; pdb.set_trace()
-                print("saving to", class_mean_file)
-                np.savez(class_mean_file, class_m_k_np)
-            else:
-                #cur_chol = sess.run(chol)
-                def inv_fn(chol_mat):
-                    cov = tf.matmul(chol_mat,tf.transpose(chol_mat,[0,2,1]))
-                    inv_cov = tf.linalg.inv(cov)
-                    return inv_cov
-                num_split = batch*2
-                chol_list = tf.split(chol, num_split, 0)
-                inv_list = [inv_fn(c) for c in chol_list]
-                class_cov_inv = np.concatenate([sess.run(i) for i in inv_list])
-                target_shape = sorted_feats.get_shape().as_list()
-                class_cov_inv = np.mean(np.reshape(class_cov_inv, target_shape + [target_shape[-1]]), 0, keepdims=True)
-                #inv_cov = tfp.math.pinv(cov)
-                # try:
-                #     class_cov_inv = sess.run(inv_cov)
-                # except Exception as ex:
-                #     import pdb; pdb.set_trace()
-                
-                if np.isnan(class_cov_inv).any():
-                    print("nan time")
-                    import pdb; pdb.set_trace()
-                print("saving to", class_cov_file)
-                np.savez(class_cov_file, class_cov_inv)
-        # print(save_location)
-        # res = 25
-        # vec_pred = np.fliplr(vec_pred)
-        # plt.quiver(vec_pred[0,::res,::res,0], vec_pred[0,::res,::res,1])
-        # plt.show()
+        coord.request_stop()
+        coord.join(threads)
 
 
 def main(_):
@@ -350,7 +271,6 @@ def main(_):
         pipeline_config.model, is_training=False)
 
     input_reader = pipeline_config.train_input_reader
-    #input_reader = pipeline_config.eval_input_reader # for testing
     input_reader.shuffle = False
     input_reader.num_epochs = 1
     input_dict = dataset_builder.build(input_reader)
