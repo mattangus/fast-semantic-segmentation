@@ -12,7 +12,6 @@ from google.protobuf import text_format
 import glob
 import matplotlib.pyplot as plt
 import cv2
-import torch
 from sklearn.feature_extraction import image
 import copy
 import tensorflow_probability as tfp
