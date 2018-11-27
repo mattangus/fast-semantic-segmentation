@@ -25,6 +25,7 @@ class PSPNetICNetResnetV1FeatureExtractor(
                  mid_downsample=False,
                  batch_norm_trainable=False,
                  reuse_weights=None,
+                 depth_multiplier=None,
                  weight_decay=0.0):
         if features_stride != 8:
             raise ValueError('`features_stride` must be 8 '
@@ -81,8 +82,9 @@ class PSPNetICNetDilatedResnet50FeatureExtractor(
                  features_stride=8,
                  batch_norm_trainable=False,
                  reuse_weights=None,
+                 depth_multiplier=None,
                  weight_decay=0.0):
         super(PSPNetICNetDilatedResnet50FeatureExtractor, self).__init__(
             'resnet_v1_50', dilated_resnet_v1.dilated_resnet_v1_50, is_training,
             filter_scale, features_stride, mid_downsample, batch_norm_trainable,
-            reuse_weights, weight_decay)
+            reuse_weights, depth_multiplier, weight_decay)

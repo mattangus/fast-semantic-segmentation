@@ -178,7 +178,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     if isinstance(model._feature_extractor, resnet_ex_class):
         batch = 2
     elif isinstance(model._feature_extractor, mobilenet_ex_class):
-        batch = 4
+        batch = 3
     
     input_queue = create_input(input_dict, batch, 15, 15, 15)
     input_dict = input_queue.dequeue()
@@ -273,8 +273,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 
                 # if idx > 10:
                 #     import pdb; pdb.set_trace()
-                # if idx*batch > 100:
-                #     break
+                if idx*batch > 3000:
+                     break
                     
                 elapsed = timeit.default_timer() - start_time
                 print('{}) wall time: {}'.format(elapsed/batch, (idx+1)*batch))
@@ -336,7 +336,7 @@ def main(_):
     
     input_reader = pipeline_config.train_input_reader
     #input_reader = pipeline_config.eval_input_reader # for testing
-    input_reader.shuffle = False
+    input_reader.shuffle = True
     input_reader.num_epochs = 1
     input_dict = dataset_builder.build(input_reader)
 

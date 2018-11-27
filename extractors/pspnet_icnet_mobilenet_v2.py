@@ -23,6 +23,7 @@ class PSPNetICNetMobilenetV2FeatureExtractor(
                  mid_downsample=False,
                  batch_norm_trainable=False,
                  reuse_weights=None,
+                 depth_multiplier=1.0,
                  weight_decay=0.0):
         if features_stride != 8:
             raise ValueError('`features_stride` must be 8 '
@@ -32,7 +33,7 @@ class PSPNetICNetMobilenetV2FeatureExtractor(
         self._mobilenet_model = mobilenet_model
         self._mid_downsample = mid_downsample
         # Mobilenet specific options
-        self._depth_multiplier = 1.0
+        self._depth_multiplier = depth_multiplier
         super(PSPNetICNetMobilenetV2FeatureExtractor, self).__init__(
             is_training, features_stride, batch_norm_trainable,
             reuse_weights, weight_decay)
@@ -58,8 +59,9 @@ class PSPNetICNetMobilenetV2FeatureExtractor(
                 conv_defs=conv_defs,
                 depth_multiplier=self._depth_multiplier,
                 min_depth=(8 if self._depth_multiplier == 1.0 else 1),
-                divisible_by=(8 if self._depth_multiplier == 1.0 else 1),
+                divisible_by=(8 if self._depth_multiplier != 1.0 else 1),
                 output_stride=self._features_stride,
+                #finegrain_classification_mode=self._depth_multiplier<1.0, #use fine grain when small mulitplier
                 final_endpoint='layer_18')
 
             half_res_features = activations[half_res_scope]
@@ -83,8 +85,9 @@ class PSPNetICNetMobilenetFeatureExtractor(
                  features_stride=8,
                  batch_norm_trainable=False,
                  reuse_weights=None,
+                 depth_multiplier=1.0,
                  weight_decay=0.0):
         super(PSPNetICNetMobilenetFeatureExtractor, self).__init__(
             'MobilenetV2', mobilenet_v2.mobilenet_base, is_training,
             filter_scale, features_stride, mid_downsample, batch_norm_trainable,
-            reuse_weights, weight_decay)
+            reuse_weights, depth_multiplier, weight_decay)

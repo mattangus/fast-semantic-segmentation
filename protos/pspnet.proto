@@ -17,4 +17,5 @@ message PSPNet {
 
 message PSPNetICNetFeatureExtractor {
     optional string type = 1;
+    optional float depth_multiplier = 2;
 }
