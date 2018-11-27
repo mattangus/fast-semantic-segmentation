@@ -151,8 +151,8 @@ def process_logits(final_logits, mean_v, var_inv_v, depth, pred_shape, num_class
         var_brod = tf.ones_like(var_inv)
         mean_brod = tf.ones_like(mean)
         # import pdb; pdb.set_trace()
-        var = tf.reduce_sum(var, axis=[0,1,2], keepdims=True)*var_brod
-        mean = tf.reduce_mean(mean, axis=[0,1,2], keepdims=True)*mean_brod
+        var_inv = tf.reduce_sum(var_inv, axis=[0,1,2], keepdims=True)*var_brod
+        #mean = tf.reduce_mean(mean, axis=[0,1,2], keepdims=True)*mean_brod
 
     #import pdb; pdb.set_trace()
 
@@ -262,7 +262,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             start_time = timeit.default_timer()
             
             res = sess.run(fetch,
-                feed_dict={mean_p: mean, var_p: var})
+                feed_dict={mean_p: mean, var_inv_p: var_inv})
             image_path = res[0][0].decode("utf-8")
 
             pred_miou_v, dist_miou_v = sess.run([pred_miou, dist_miou])
