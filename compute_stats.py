@@ -102,80 +102,9 @@ class StatComputer(ABC):
 
 class MeanComputer(StatComputer):
 
-<<<<<<< HEAD
     def __init__(self, values, weights):
         self.values = values
         self.weights = weights
-=======
-def _get_images_from_path(input_path):
-    image_file_paths = []
-    if os.path.isdir(input_path):
-        for dirpath,_,filenames in os.walk(input_path):
-            for f in filenames:
-                file_path = os.path.abspath(os.path.join(dirpath, f))
-                if not _valid_file_ext(file_path):
-                    raise ValueError('File must be JPG or PNG.')
-                image_file_paths.append(file_path)
-    else:
-        if not _valid_file_ext(input_path):
-            raise ValueError('File must be JPG or PNG.')
-        image_file_paths.append(input_path)
-    return image_file_paths
-
-def b_inv(b_mat):
-    eye = b_mat.new_ones(b_mat.size(-1)).diag().expand_as(b_mat)
-    b_inv, _ = torch.gesv(eye, b_mat)
-    return b_inv
-
-def compute_mean(m_km1, x_k, k, mask):
-    if m_km1 is None:
-        return torch.tensor(x_k).cuda(), torch.ones(x_k.shape).cuda()
-    x_k = torch.tensor(x_k).cuda()
-    mask = torch.tensor(mask).cuda()
-    temp = (x_k - m_km1)*mask
-    m_k = m_km1 + temp/k
-    k += mask
-    return m_k, k
-
-# def compute_cov_inv(m, v_km1_inv, x_k, k, mask):
-#     dim = x_k.shape[-1]
-#     out_shape = list(x_k.shape[:-1]) + [dim, x_k.shape[-1]]
-#     if v_km1_inv is None:
-#         return torch.zeros(out_shape).cuda(), torch.ones(out_shape).cuda()
-#     x_k = torch.tensor(x_k).cuda()
-#     mask = torch.tensor(mask).cuda()
-#     mask = mask.unsqueeze(-1)
-#     temp = (x_k - m)
-#     sigma = torch.bmm(temp.view(-1, dim).unsqueeze(2), temp.view(-1, dim).unsqueeze(1)).view(out_shape)
-#     # try:
-#     sig_inv = torch.inverse(sigma)
-#     eye_test = torch.bmm(sig_inv[0,0,0], sigma[0,0,0])
-#     v_k_inv = sig_inv*mask + v_km1_inv
-#     # except Exception as ex:
-#     #     import pdb; pdb.set_trace()
-#     #     print("here")
-#     k += mask
-#     import pdb; pdb.set_trace()
-#     return v_k_inv, k
-
-def compute_cov_inv(m, v_km1_inv, sig_inv_k, k, mask):
-    out_shape = sig_inv_k.shape
-    if v_km1_inv is None:
-        return torch.zeros(out_shape).cuda(), torch.ones(out_shape).cuda()
-    sig_inv_k = torch.tensor(sig_inv_k).cuda()
-    v_k_inv = sig_inv_k + v_km1_inv
-    k += mask
-    return v_k_inv, k
-
-def compute_stats(m_km1, v_km1_inv, x_k, mask, sig, k, first_pass):
-    if first_pass:
-        m_k, k = compute_mean(m_km1, x_k, k, mask)
-        v_k_inv = v_km1_inv
-    else:
-        m_k = m_km1
-        v_k_inv, k = compute_mean(v_km1_inv, sig, k, np.expand_dims(mask, -1))
-    return m_k, v_k_inv, k
->>>>>>> master
 
         with tf.variable_scope("MeanComputer"):
             self.mean, self.update = streaming_mean(self.values, self.weights, True)
