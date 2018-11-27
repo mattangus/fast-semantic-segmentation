@@ -22,6 +22,7 @@ from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.training import distribute as distribute_lib
 from tensorflow.python.util.deprecation import deprecated
 from tensorflow.python.util.tf_export import tf_export
+import tensorflow as tf
 
 def _safe_div(numerator, denominator, name):
   """Divides two values, returning 0 if the denominator is <= 0.
@@ -213,7 +214,7 @@ def mean_iou(labels,
         ops.add_to_collections(metrics_collections, mean_iou_v)
       return mean_iou_v
 
-    mean_iou_v = distribute_lib.get_tower_context().merge_call(
+    mean_iou_v = tf.contrib.distribute.get_tower_context().merge_call(
         mean_iou_across_towers, total_cm)
 
     if updates_collections:

@@ -28,8 +28,10 @@ if args.cov_inv:
 else:
     cov_inv = None
 
-#mean = ed(ed(mean,1),1)
-import pdb; pdb.set_trace()
+ed = np.expand_dims
+# mean = ed(ed(mean,1),1)
+#cov_inv = ed(ed(cov_inv,1),1)
+
 mean = np.swapaxes(mean, 3, 0)
 if cov_inv is not None:
     cov_inv = np.swapaxes(cov_inv, 3, 0)
@@ -42,7 +44,7 @@ def mahal(m, cov_inv, p):
     cov_inv = np.squeeze(cov_inv)
 
     left = np.matmul(temp, cov_inv)
-    dist = dist = np.squeeze(np.matmul(left, np.transpose(temp, [0,1,3,2])))
+    dist = np.squeeze(np.matmul(left, np.transpose(temp, [0,1,3,2])))
     return np.mean(dist)
 
 def l2_norm(m, unused, p):
@@ -66,7 +68,10 @@ yticklabels = xticklabels
 
 plt.figure(figsize=[20.48,10.24])
 sb.heatmap(cm, annot=True, fmt="g", xticklabels=xticklabels, yticklabels=yticklabels)
-plt.savefig(os.path.join(os.path.dirname(args.mean),"mean_dists.png"))
+img_name = "l2_dist.png"
+if cov_inv is not None:
+    img_name = "mahal_dist.png"
+plt.savefig(os.path.join(os.path.dirname(args.mean), img_name))
 plt.cla() #clear memory since no display happens
 plt.clf()
 
