@@ -15,6 +15,7 @@ import cv2
 import torch
 from sklearn.feature_extraction import image
 import copy
+import tensorflow_probability as tfp
 
 import extractors
 
@@ -66,7 +67,7 @@ def create_input(tensor_dict,
                 batch_queue_capacity,
                 batch_queue_threads,
                 prefetch_queue_capacity):
-    
+
     def cast_and_reshape(tensor_dict, dicy_key):
         items = tensor_dict[dicy_key]
         float_images = tf.to_float(items)
@@ -89,6 +90,9 @@ def _valid_file_ext(input_path):
     ext = os.path.splitext(input_path)[-1].upper()
     return ext in ['.JPG', '.JPEG', '.PNG']
 
+def safe_div(a,b, thresh = 1e-7):
+    b = tf.broadcast_to(a, tf.shape(b)) #broadcast
+    return tf.where(tf.less(tf.abs(b), thresh), b, a/b)
 
 def _get_images_from_path(input_path):
     image_file_paths = []
@@ -104,6 +108,20 @@ def _get_images_from_path(input_path):
             raise ValueError('File must be JPG or PNG.')
         image_file_paths.append(input_path)
     return image_file_paths
+
+def p_inv(matrix):
+    
+    """Returns the Moore-Penrose pseudo-inverse"""
+    import pdb; pdb.set_trace()
+    s, u, v = tf.svd(matrix)
+    
+    s_inv = tf.matrix_diag(safe_div(float(1),s))
+
+    perm = list(range(len(u.get_shape())))
+    perm[-1], perm[-2] = perm[-2], perm[-1]
+
+    #v s^-1 u^T
+    return tf.matmul(v, tf.matmul(s_inv, tf.transpose(u, perm)))
 
 # def b_inv(b_mat):
 #     eye = b_mat.new_ones(b_mat.size(-1)).diag().expand_as(b_mat)
@@ -143,10 +161,6 @@ def compute_mean(m_km1, x_k, k, mask):
 #         v_k_inv, k = compute_cov_inv(m_k, v_km1_inv, x_k, k, mask)
 #     return m_k, v_k_inv, k
 
-def safe_div(a,b):
-    b = tf.ones_like(a)*b #broadcast
-    return tf.where(tf.less(tf.abs(b), 1e-7), b, a/b)
-
 def process_annot(annot_tensor, feat, num_classes):
     one_hot = tf.one_hot(annot_tensor, num_classes)
     resized = tf.expand_dims(tf.image.resize_nearest_neighbor(one_hot, feat.get_shape().as_list()[1:-1]), -1)
@@ -159,12 +173,12 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                         label_color_map, output_directory, num_classes, patch_size):
     assert len(input_shape) == 3, "input shape must be rank 3"
     effective_shape = [None] + input_shape
-    
+
     if isinstance(model._feature_extractor, resnet_ex_class):
         batch = 2
     elif isinstance(model._feature_extractor, mobilenet_ex_class):
-        batch = 1
-    
+        batch = 2
+
     input_queue = create_input(input_dict, batch, 15, 15, 15)
     input_dict = input_queue.dequeue()
 
@@ -204,7 +218,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     with tf.Session(config=config) as sess:
         saver = tf.train.Saver(tf.global_variables())
-        
+
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
         tf.train.start_queue_runners(sess)
         saver.restore(sess, trained_checkpoint_prefix)
@@ -229,11 +243,10 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 print("second pass")
                 mean_sub = sorted_feats - class_m_k
                 batch_feats = tf.reshape(mean_sub, [-1, tf.shape(sorted_feats)[-1]])
-                chol, chol_update = cholesky_update(batch_feats)
+                batch_mask = tf.reshape(avg_mask, [-1])
+                chol, chol_update = cholesky_update(batch_feats, batch_mask)
                 sess.run(tf.global_variables_initializer())
             for idx in range(num_step):
-                
-                import pdb; pdb.set_trace()
                 start_time = timeit.default_timer()
 
                 #cache results for second pass
@@ -243,7 +256,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                     sorted_logits = res[0]
                     mask = res[1]
                     mean_logits = sorted_logits#res[2]
-                                    
+
                     for b in range(sorted_logits.shape[0]): #should only be 1
                         # # ret = compute_stats(class_m_k, class_v_k_inv,
                         #                     sorted_logits[b:b+1], mask[b:b+1],
@@ -252,15 +265,15 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                         # class_m_k, class_k = ret
                 else:
                     sess.run(chol_update)
-                    cur_chol = sess.run(chol)
+                    #cur_chol = sess.run(chol)
 
                     # import pdb; pdb.set_trace()
-                
+
                 # if idx > 10:
                 #     import pdb; pdb.set_trace()
-                if idx*batch > 20:
-                    break
-                    
+                # if idx*batch > 50:
+                #     break
+
                 elapsed = timeit.default_timer() - start_time
                 print('{}) wall time: {}'.format(elapsed/batch, (idx+1)*batch))
 
@@ -271,15 +284,31 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 if np.isnan(class_m_k_np).any():
                     print("nan time")
                     import pdb; pdb.set_trace()
+                print("saving to", class_mean_file)
                 np.savez(class_mean_file, class_m_k_np)
             else:
-                import pdb; pdb.set_trace()                
-                class_v_k_inv_np = (class_v_k_inv).numpy()
-                if np.isnan(class_v_k_inv_np).any():
+                #cur_chol = sess.run(chol)
+                def inv_fn(chol_mat):
+                    cov = tf.matmul(chol_mat,tf.transpose(chol_mat,[0,2,1]))
+                    inv_cov = tf.linalg.inv(cov)
+                    return inv_cov
+                num_split = batch*2
+                chol_list = tf.split(chol, num_split, 0)
+                inv_list = [inv_fn(c) for c in chol_list]
+                class_cov_inv = np.concatenate([sess.run(i) for i in inv_list])
+                target_shape = sorted_feats.get_shape().as_list()
+                class_cov_inv = np.mean(np.reshape(class_cov_inv, target_shape + [target_shape[-1]]), 0, keepdims=True)
+                #inv_cov = tfp.math.pinv(cov)
+                # try:
+                #     class_cov_inv = sess.run(inv_cov)
+                # except Exception as ex:
+                #     import pdb; pdb.set_trace()
+                
+                if np.isnan(class_cov_inv).any():
                     print("nan time")
                     import pdb; pdb.set_trace()
-
-                np.savez(class_cov_file, class_v_k_inv_np)
+                print("saving to", class_cov_file)
+                np.savez(class_cov_file, class_cov_inv)
         # print(save_location)
         # res = 25
         # vec_pred = np.fliplr(vec_pred)
@@ -319,7 +348,7 @@ def main(_):
 
     num_classes, segmentation_model = model_builder.build(
         pipeline_config.model, is_training=False)
-    
+
     input_reader = pipeline_config.train_input_reader
     #input_reader = pipeline_config.eval_input_reader # for testing
     input_reader.shuffle = False

@@ -17,7 +17,7 @@ from protos import pipeline_pb2
 from builders import model_builder
 from libs.exporter import deploy_segmentation_inference_graph, _map_to_colored_labels
 from libs.constants import CITYSCAPES_LABEL_COLORS, CITYSCAPES_LABEL_IDS
-
+from libs.metrics import mean_iou
 
 slim = tf.contrib.slim
 
@@ -113,8 +113,8 @@ def process_logits(final_logits, mean_v, var_v, depth, pred_shape, num_classes, 
     if use_pool:
         var_brod = tf.ones_like(var)
         mean_brod = tf.ones_like(mean)
-        import pdb; pdb.set_trace()
-        var = tf.reduce_mean(var, axis=[0,1,2,3], keepdims=True)*var_brod
+        # import pdb; pdb.set_trace()
+        var = tf.reduce_sum(var, axis=[0,1,2], keepdims=True)*var_brod
         mean = tf.reduce_mean(mean, axis=[0,1,2], keepdims=True)*mean_brod
 
     #import pdb; pdb.set_trace()
@@ -149,9 +149,9 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     outputs, placeholder_tensor = deploy_segmentation_inference_graph(
         model=model,
         input_shape=input_shape,
-        pad_to_shape=pad_to_shape,
-        label_color_map=label_color_map)
+        pad_to_shape=pad_to_shape)
     pred_tensor = outputs[model.main_class_predictions_key]
+    import pdb; pdb.set_trace()
     final_logits = outputs[model.final_logits_key]
 
     stats_dir = os.path.join(eval_dir, "stats")
