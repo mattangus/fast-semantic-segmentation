@@ -14,8 +14,8 @@ import matplotlib.pyplot as plt
 import cv2
 from sklearn.feature_extraction import image
 import copy
-import tensorflow_probability as tfp
 from abc import ABC, abstractmethod
+from fractions import gcd
 
 import extractors
 
@@ -65,6 +65,9 @@ flags.DEFINE_boolean('label_ids', False,
 flags.DEFINE_boolean('use_pool', False,
                      'avg pool over spatial dims')
 
+flags.DEFINE_integer("max_iters", None, "limit the number of iterations for large datasets")
+
+
 def create_input(tensor_dict,
                 batch_size,
                 batch_queue_capacity,
@@ -107,6 +110,7 @@ class MeanComputer(StatComputer):
 
         with tf.variable_scope("MeanComputer"):
             self.mean, self.update = streaming_mean(self.values, self.weights, True)
+            import pdb; pdb.set_trace()
             self.mean = tf.expand_dims(self.mean,0)
     
     def get_update_op(self):
@@ -141,7 +145,10 @@ class CovComputer(StatComputer):
             inv_cov = tf.linalg.inv(cov)
             return inv_cov
         target_shape = self.values.get_shape().as_list()
-        num_split = target_shape[0]
+        in_size = self.chol.get_shape().as_list()[0]
+        to_check = [(a, in_size) for a in range(1,21)]
+        num_split = max(map(lambda v: gcd(v[0],v[1]), to_check))
+        print("using split", num_split)
         chol_list = tf.split(self.chol, num_split, 0)
         inv_list = [inv_fn(c) for c in chol_list]
         class_cov_inv = np.concatenate([sess.run(i) for i in inv_list])
@@ -153,14 +160,8 @@ class CovComputer(StatComputer):
         print("saving to", file_name)
         np.savez(file_name, class_cov_inv)
 
-def do_cov_inv(feats, mean, mask):
-    temp = feats - mean
-    sigma = tf.matmul(tf.expand_dims(temp, -1), tf.expand_dims(temp, -2))*tf.expand_dims(mask,-1)
-    #sig_inv = tf.linalg.inv(sigma)*tf.expand_dims(mask,-1)
-    return sigma#, sig_inv
 
-
-def process_annot(annot_tensor, feat, mean, num_classes):
+def process_annot(annot_tensor, feat, num_classes):
     one_hot = tf.one_hot(annot_tensor, num_classes)
     resized = tf.expand_dims(tf.image.resize_nearest_neighbor(one_hot, feat.get_shape().as_list()[1:-1]), -1)
     sorted_feats = tf.expand_dims(feat, -2)*resized #broadcast
@@ -176,7 +177,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     if isinstance(model._feature_extractor, resnet_ex_class):
         batch = 1
     elif isinstance(model._feature_extractor, mobilenet_ex_class):
-        batch = 2
+        batch = 1
 
     input_queue = create_input(input_dict, batch, 15, 15, 15)
     input_dict = input_queue.dequeue()
@@ -214,7 +215,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         print("first_pass")
 
     update_op = stat_computer.get_update_op()
-
+    
     coord = tf.train.Coordinator()
     config = tf.ConfigProto()
     config.gpu_options.allow_growth=True
@@ -292,8 +293,10 @@ def main(_):
     input_reader.num_epochs = 1
     input_dict = dataset_builder.build(input_reader)
 
+    iters = min(input_reader.num_examples, FLAGS.max_iters)
+
     run_inference_graph(segmentation_model, FLAGS.trained_checkpoint,
-                        input_dict, input_reader.num_examples, input_shape, pad_to_shape,
+                        input_dict, iters, input_shape, pad_to_shape,
                         label_map, output_directory, num_classes, patch_size)
 
 if __name__ == '__main__':

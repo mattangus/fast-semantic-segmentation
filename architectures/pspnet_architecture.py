@@ -176,8 +176,8 @@ class PSPNetArchitecture(model.FastSegmentationModel):
             branch_merge = tf.concat([input_features, full_pool,
                                      half_pool, third_pool, forth_pool],
                                      axis=-1)
-            if self._train_reduce:
-                branch_merge = tf.stop_gradient(branch_merge)
+            # if self._train_reduce:
+            #     branch_merge = tf.stop_gradient(branch_merge)
             output = slim.conv2d(branch_merge,
                     512//self._filter_scale, (3, 3),
                     stride=1, normalizer_fn=slim.batch_norm)

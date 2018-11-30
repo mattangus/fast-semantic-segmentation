@@ -34,7 +34,7 @@ def _max_dist_batch(logits, labels, ignore_label, num_classes):
     #TODO: try bilinear resize!
     resized = tf.expand_dims(tf.image.resize_nearest_neighbor(one_hot, logits.get_shape().as_list()[1:-1]),-2)
     sorted_feats = tf.expand_dims(logits, -1)*resized
-    means = tf.reduce_sum(sorted_feats, axis=0) / tf.reduce_sum(resized,0) #covs = _moments(sorted_feats)
+    means = tf.reduce_sum(sorted_feats, axis=0) * safe_f(tf.reduce_sum(resized,0), tf.reciprocal) #covs = _moments(sorted_feats)
     n = 1.0
     #eye = tf.eye(num_classes)
     diffs = tf.expand_dims(means, -1) - tf.expand_dims(means, -2)
@@ -55,7 +55,7 @@ def _max_dist_batch(logits, labels, ignore_label, num_classes):
     #inv_dist = tf.where(tf.is_finite(inv_dist), inv_dist, tf.zeros_like(inv_dist))
     loss = n * tf.reduce_sum(dist_inv, -1)
     # global DEBUG
-    # DEBUG = [diffs, sq_dist, dist, lin_inv, loss]
+    # DEBUG = [diffs, sq_dist, dist, loss]
     return tf.reduce_mean(loss)
 
 def build(loss_config, num_classes):

@@ -364,10 +364,10 @@ def train_segmentation_model(create_model_fn,
         # Save checkpoints regularly.
         saver = tf.train.Saver(max_to_keep=max_checkpoints_to_keep)
 
-        gpu_mems = []
-        for i in range(num_clones):
-            with tf.device("/gpu:"+str(i)):
-                gpu_mems.append(tf.cast(BytesInUse(), tf.float32)/float(1024*1024))
+        # gpu_mems = []
+        # for i in range(num_clones):
+        #     with tf.device("/gpu:"+str(i)):
+        #         gpu_mems.append(tf.cast(BytesInUse(), tf.float32)/float(1024*1024))
 
         # HACK to see memory usage.
         # TODO: Clean up, pretty messy.
@@ -379,11 +379,11 @@ def train_segmentation_model(create_model_fn,
             else:
                 run_metadata = None
                 options = None
-            total_loss, np_global_step, mem, cur_gvs, dbg = sess.run([train_op, global_step, gpu_mems, grads_and_vars, dist_builder.DEBUG],
+            total_loss, np_global_step, cur_gvs, dbg = sess.run([train_op, global_step, grads_and_vars, dist_builder.DEBUG],
                                         options=options,
                                         run_metadata=run_metadata)
             time_elapsed = time.time() - start_time
-
+            #import pdb; pdb.set_trace()
             if 'should_log' in train_step_kwargs:
                 if sess.run(train_step_kwargs['should_log']):
                     tf.logging.info(
