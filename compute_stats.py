@@ -110,7 +110,6 @@ class MeanComputer(StatComputer):
 
         with tf.variable_scope("MeanComputer"):
             self.mean, self.update = streaming_mean(self.values, self.weights, True)
-            import pdb; pdb.set_trace()
             self.mean = tf.expand_dims(self.mean,0)
     
     def get_update_op(self):
@@ -185,8 +184,10 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     input_tensor = input_dict[dataset_builder._IMAGE_FIELD]
     annot_tensor = input_dict[dataset_builder._LABEL_FIELD]
 
-    input_tensor = tf.concat([input_tensor, tf.image.flip_left_right(input_tensor)], 0)
-    annot_tensor = tf.concat([annot_tensor[...,0], tf.image.flip_left_right(annot_tensor)[...,0]], 0)
+    #input_tensor = tf.concat([input_tensor, tf.image.flip_left_right(input_tensor)], 0)
+    annot_tensor = annot_tensor[...,0] #tf.concat([annot_tensor[...,0], tf.image.flip_left_right(annot_tensor)[...,0]], 0)
+
+    #import pdb; pdb.set_trace()
 
     outputs, placeholder_tensor = deploy_segmentation_inference_graph(
         model=model,
@@ -200,25 +201,26 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     class_cov_file = os.path.join(stats_dir, "class_cov_inv.npz")
 
     first_pass = True
-    avg_mask, sorted_feats = process_annot(annot_tensor, outputs[model.final_logits_key], num_classes)
+    with tf.device("gpu:1"):
+        avg_mask, sorted_feats = process_annot(annot_tensor, outputs[model.final_logits_key], num_classes)
 
-    # if os.path.exists(mean_file) and os.path.exists(class_mean_file):
-    if os.path.exists(class_mean_file):
-        class_mean_v = np.load(class_mean_file)["arr_0"]
-        first_pass = False
-        stat_computer = CovComputer(sorted_feats, avg_mask, class_mean_v)
-        output_file = class_cov_file
-        print("second_pass")
-    else:
-        stat_computer = MeanComputer(sorted_feats, avg_mask)
-        output_file = class_mean_file
-        print("first_pass")
+        # if os.path.exists(mean_file) and os.path.exists(class_mean_file):
+        if os.path.exists(class_mean_file):
+            class_mean_v = np.load(class_mean_file)["arr_0"]
+            first_pass = False
+            stat_computer = CovComputer(sorted_feats, avg_mask, class_mean_v)
+            output_file = class_cov_file
+            print("second_pass")
+        else:
+            stat_computer = MeanComputer(sorted_feats, avg_mask)
+            output_file = class_mean_file
+            print("first_pass")
 
-    update_op = stat_computer.get_update_op()
+        update_op = stat_computer.get_update_op()
     
     coord = tf.train.Coordinator()
     config = tf.ConfigProto()
-    config.gpu_options.allow_growth=True
+    #config.gpu_options.allow_growth=True
 
     full_eye = None
     coord = tf.train.Coordinator()

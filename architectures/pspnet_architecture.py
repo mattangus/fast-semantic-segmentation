@@ -124,7 +124,7 @@ class PSPNetArchitecture(model.FastSegmentationModel):
             # Outputs with auxilarary loss for training
             prediction_dict = {
                 self.main_class_predictions_key: predictions,
-                self.final_logits_key: predictions_no_resize }
+                self.final_logits_key: final_logits }
             # Aux loss as described in PSPNet paper
             if self._is_training and self._use_aux_loss:
                 with tf.variable_scope('AuxPredictions'):

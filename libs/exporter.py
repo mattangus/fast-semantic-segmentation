@@ -46,12 +46,12 @@ def _get_outputs_from_inputs(model, input_tensors,
     return outputs_dict
 
 
-def _image_tensor_input_placeholder(input, input_shape=None, pad_to_shape=None):
+def _image_tensor_input_placeholder(input, input_shape=None, pad_to_shape=None, input_type=tf.uint8):
     if input_shape is None:
         input_shape = (None, None, None, 3)
     if input is None:
         placeholder_tensor = tf.placeholder(
-            dtype=tf.uint8, shape=input_shape, name='inputs')
+            dtype=input_type, shape=input_shape, name='inputs')
     else:
         placeholder_tensor = input
     if pad_to_shape is not None:
@@ -66,9 +66,10 @@ def deploy_segmentation_inference_graph(model, input_shape,
                                         input=None,
                                         pad_to_shape=None,
                                         label_color_map=None,
+                                        input_type=tf.uint8,
                                         output_collection_name="predictions"):
     (placeholder_tensor,
-      input_tensor) = _image_tensor_input_placeholder(input, input_shape, pad_to_shape)
+      input_tensor) = _image_tensor_input_placeholder(input, input_shape, pad_to_shape, input_type)
     outputs = _get_outputs_from_inputs(model, input_tensor,
             output_collection_name=output_collection_name)
     predictions = outputs[model.main_class_predictions_key]

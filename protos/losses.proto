@@ -22,8 +22,9 @@ message ClassificationLoss {
 
 message DistLoss {
     oneof loss_type {
-        BatchMomentLoss batch = 1;
+        L2MomentLoss l2 = 1;
         NoLoss none = 2;
+        MahalMomentLoss mahal = 3;
     }
 }
 
@@ -31,6 +32,8 @@ message SoftmaxClassificationLoss {}
 
 message FocalClassificationLoss {}
 
-message BatchMomentLoss {}
+message L2MomentLoss {}
+
+message MahalMomentLoss {}
 
 message NoLoss {}

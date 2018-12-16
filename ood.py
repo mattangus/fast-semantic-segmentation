@@ -26,6 +26,8 @@ from libs.constants import CITYSCAPES_LABEL_COLORS, CITYSCAPES_LABEL_IDS, URSA_L
 from libs.metrics import mean_iou
 from libs.ursa_map import train_name
 
+#from third_party.mem_gradients_patch import gradients
+
 slim = tf.contrib.slim
 
 flags = tf.app.flags
@@ -63,6 +65,15 @@ flags.DEFINE_boolean('global_cov', False,'')
 flags.DEFINE_boolean('global_mean', False,'')
 
 flags.DEFINE_boolean('write_out', False,'')
+
+flags.DEFINE_boolean('debug', False,'')
+
+GRADIENT_CHECKPOINTS = [
+    "SharedFeatureExtractor/MobilenetV2/expanded_conv_4/output",
+    "SharedFeatureExtractor/MobilenetV2/expanded_conv_8/output",
+    "SharedFeatureExtractor/MobilenetV2/expanded_conv_12/output",
+    "SharedFeatureExtractor/MobilenetV2/expanded_conv_16/output",
+]
 
 def create_input(tensor_dict,
                 batch_size,
@@ -182,7 +193,7 @@ def process_logits(final_logits, mean_v, var_inv_v, depth, pred_shape, num_class
     min_dist = tf.reduce_min(full_dist, -1)
     # scaled_dist = full_dist/tf.reduce_max(full_dist)
     # dist_out = (scaled_dist*255).astype(np.uint8)
-    # import pdb; pdb.set_trace()
+    #import pdb; pdb.set_trace()
     return dist_class, full_dist, min_dist, mean_p, var_inv_p #, [temp, temp2, left, dist, img_dist]
 
 def get_miou(labels,
@@ -254,11 +265,13 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     annot_tensor = input_dict[dataset_builder._LABEL_FIELD]
     input_name = input_dict[dataset_builder._IMAGE_NAME_FIELD]
 
+    annot_pl = tf.placeholder(tf.float32, annot_tensor.get_shape().as_list())
     outputs, placeholder_tensor = deploy_segmentation_inference_graph(
         model=model,
         input_shape=effective_shape,
-        input=input_tensor,
-        pad_to_shape=pad_to_shape)
+        #input=input_tensor,
+        pad_to_shape=pad_to_shape,
+        input_type=tf.float32)
 
     pred_tensor = outputs[model.main_class_predictions_key]
     final_logits = outputs[model.final_logits_key]
@@ -280,21 +293,40 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     #mean = np.reshape(mean, [-1] + mean_dims)
     #var_inv = np.reshape(var_inv, [-1] + var_dims)
-    dist_class, full_dist, min_dist, mean_p, var_inv_p  = process_logits(final_logits, mean, var_inv, depth, pred_tensor.get_shape().as_list(), num_classes, global_cov, global_mean)
-    dist_colour = _map_to_colored_labels(dist_class, pred_tensor.get_shape().as_list(), label_color_map)
-    pred_colour = _map_to_colored_labels(pred_tensor, pred_tensor.get_shape().as_list(), label_color_map)
+    with tf.device("gpu:1"):
+        dist_class, full_dist, min_dist, mean_p, var_inv_p  = process_logits(final_logits, mean, var_inv, depth, pred_tensor.get_shape().as_list(), num_classes, global_cov, global_mean)
+        dist_colour = _map_to_colored_labels(dist_class, pred_tensor.get_shape().as_list(), label_color_map)
+        pred_colour = _map_to_colored_labels(pred_tensor, pred_tensor.get_shape().as_list(), label_color_map)
 
     with tf.variable_scope("PredIou"):
-        pred_miou, pred_conf_mat, pred_update = get_miou(annot_tensor, pred_tensor, num_classes, ignore_label)
+        pred_miou, pred_conf_mat, pred_update = get_miou(annot_pl, pred_tensor, num_classes, ignore_label)
     with tf.variable_scope("DistIou"):
-        dist_miou, dist_conf_mat, dist_update = get_miou(annot_tensor, dist_class, num_classes, ignore_label)
+        dist_miou, dist_conf_mat, dist_update = get_miou(annot_pl, dist_class, num_classes, ignore_label)
 
     iou_update = tf.group([pred_update, dist_update])
 
     mean = np.reshape(mean, mean_p.get_shape().as_list())
     var_inv = np.reshape(var_inv, var_inv_p.get_shape().as_list())
 
-    fetch = [input_name, pred_tensor, pred_colour, dist_colour, dist_class, full_dist, min_dist, iou_update, annot_tensor, input_tensor, final_logits]
+    input_fetch = [input_name, input_tensor, annot_tensor]
+
+    fetch = [pred_tensor, pred_colour, dist_colour, dist_class, full_dist, min_dist, iou_update, final_logits]
+
+
+    # Add checkpointing nodes to correct collection
+    if GRADIENT_CHECKPOINTS is not None:
+        tf.logging.info(
+            'Adding gradient checkpoints to `checkpoints` collection')
+        graph = tf.get_default_graph()
+        checkpoint_list = GRADIENT_CHECKPOINTS
+        for checkpoint_node_name in checkpoint_list:
+            curr_tensor_name = checkpoint_node_name + ":0"
+            node = graph.get_tensor_by_name(curr_tensor_name)
+            tf.add_to_collection('checkpoints', node)
+    
+    grads = tf.gradients(min_dist, placeholder_tensor)
+    epsilon = 0.2
+    adv_img = placeholder_tensor - epsilon*tf.sign(grads)
 
     num_step = num_images // batch
 
@@ -305,13 +337,23 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         tf.train.start_queue_runners(sess)
         saver = tf.train.Saver(tf.global_variables())
         saver.restore(sess, trained_checkpoint_prefix)
+
         for idx in range(num_step):
 
             start_time = timeit.default_timer()
 
-            res = sess.run(fetch,
-                feed_dict={mean_p: mean, var_inv_p: var_inv})
-            image_path = res[0][0].decode("utf-8")
+            inputs = sess.run(input_fetch)
+
+            annot_raw = inputs[2]
+            img_raw = inputs[1]
+
+            adv_img_out = sess.run(adv_img, feed_dict={mean_p: mean, var_inv_p: var_inv,
+                            placeholder_tensor: img_raw, annot_pl: annot_raw})
+            adv_img_out = adv_img_out[0]
+
+            res = sess.run(fetch, feed_dict={mean_p: mean, var_inv_p: var_inv,
+                            placeholder_tensor: adv_img_out, annot_pl: annot_raw})
+            image_path = inputs[0][0].decode("utf-8")
 
             pred_miou_v, dist_miou_v = sess.run([pred_miou, dist_miou])
             #import pdb; pdb.set_trace()
@@ -323,32 +365,55 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             print('{0:.4f} iter: {1}, pred iou: {2:.6f}, dist iou: {3:.6f}'.format(elapsed, idx+1, pred_miou_v, dist_miou_v), end=end)
 
             if FLAGS.write_out:
-                predictions = res[1]
-                prediction_colour = res[2]
+                predictions = res[0]
+                prediction_colour = res[1]
+                dist_out = res[2][0].astype(np.uint8)
+                full_dist_out = res[4][0]
+                min_dist_out = res[5][0]
 
-                dist_out = res[3][0].astype(np.uint8)
-                full_dist_out = res[5][0]
-                min_dist_out = res[6][0]
-                
-                
-                # for i in range(num_classes):
-                #     temp = full_dist_out[:,:,i]
-                #     temp[np.logical_not(np.isfinite(temp))] = 0
-                #     temp = temp/np.max(temp)
-                #     cv2.imshow(str(i), temp)
-                # cv2.waitKey()
+                # annot_out = res[8][0]
+                # n_values = np.max(annot_out) + 1
+                # one_hot_out = np.eye(n_values)[annot_out][...,0,:num_classes]
+                #import pdb; pdb.set_trace()
 
                 min_dist = np.expand_dims(np.nanmin(full_dist_out, -1), -1)
                 min_dist[np.logical_not(np.isfinite(min_dist))] = np.nanmin(full_dist_out)
                 min_dist = min_dist - np.min(min_dist) #min now at 0
                 min_dist = (255*min_dist/np.max(min_dist)).astype(np.uint8) #max now at 255
                 
-                final_out = res[10][0]
-                annot_out = res[8][0]
-                img_out = res[9][0]
+                filename = os.path.basename(image_path)
+                save_location = os.path.join(output_directory, filename)
+                dist_filename = os.path.join(dist_dir, filename)
+                min_filename = os.path.join(min_dir, filename)
+
+                prediction_colour = prediction_colour.astype(np.uint8)
+                output_channels = len(label_color_map[0])
+                if output_channels == 1:
+                    prediction_colour = np.squeeze(prediction_colour[0],-1)
+                else:
+                    prediction_colour = prediction_colour[0]
+                #import pdb; pdb.set_trace()
+                cv2.imwrite(save_location, prediction_colour)
+                cv2.imwrite(min_filename, min_dist)
+                cv2.imwrite(dist_filename, dist_out)
+            
+            if FLAGS.debug:
+                dist_out = res[2][0].astype(np.uint8)
+                full_dist_out = res[4][0]
+                min_dist_out = res[5][0]
+
+                min_dist = np.expand_dims(np.nanmin(full_dist_out, -1), -1)
+                min_dist[np.logical_not(np.isfinite(min_dist))] = np.nanmin(full_dist_out)
+                min_dist = min_dist - np.min(min_dist) #min now at 0
+                min_dist = (255*min_dist/np.max(min_dist)).astype(np.uint8) #max now at 255
                 
-                thresh = np.max(min_dist_out) - 100
-                grain = 100
+                final_out = res[7][0]
+                annot_out = inputs[2][0]
+                img_out = inputs[1][0]
+                
+                thresh = np.median(min_dist_out)
+                grain = (np.max(min_dist_out) - np.min(min_dist_out))/300
+                print(thresh, "  ", grain)
                 while True:
                     mask = np.expand_dims(min_dist_out < thresh,-1)
                     #cv2.imshow("img", (255*mask).astype(np.uint8))
@@ -370,32 +435,6 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                         print(thresh, "  ", grain)
                     elif key == 112: #p
                         import pdb; pdb.set_trace()
-
-                #display_projection(final_out, annot_out, 2)
-
-                #cv2.imshow("test", ((res[8][0] == 3)*255).astype(np.uint8))
-                # if idx >= 5:
-                #     colour = cv2.resize(annot_out, (final_out.shape[1], final_out.shape[0]), interpolation=cv2.INTER_NEAREST)
-                #     ppl_pix = final_out[colour==3]
-                #     diff = diff = np.expand_dims(ppl_pix,0) - np.expand_dims(ppl_pix,1)
-                #     dists = np.sqrt(np.sum(np.square(diff),-1))
-                #     import pdb; pdb.set_trace()
-                
-                filename = os.path.basename(image_path)
-                save_location = os.path.join(output_directory, filename)
-                dist_filename = os.path.join(dist_dir, filename)
-                min_filename = os.path.join(min_dir, filename)
-
-                prediction_colour = prediction_colour.astype(np.uint8)
-                output_channels = len(label_color_map[0])
-                if output_channels == 1:
-                    prediction_colour = np.squeeze(prediction_colour[0],-1)
-                else:
-                    prediction_colour = prediction_colour[0]
-                #import pdb; pdb.set_trace()
-                cv2.imwrite(save_location, prediction_colour)
-                cv2.imwrite(min_filename, min_dist)
-                cv2.imwrite(dist_filename, dist_out)
         print('{0:.4f} iter: {1}, pred iou: {2:.6f}, dist iou: {3:.6f}'.format(elapsed, idx+1, pred_miou_v, dist_miou_v))
 
 

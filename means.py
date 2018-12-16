@@ -12,6 +12,7 @@ ed = np.expand_dims
 parser = argparse.ArgumentParser()
 parser.add_argument("--mean", type=str, required=True)
 parser.add_argument("--cov_inv", type=str, default=None)
+parser.add_argument("--show", action="store_true", default=False)
 #parser.add_argument("--output", type=str, required=True)
 
 args = parser.parse_args()
@@ -66,6 +67,9 @@ xticklabels = ['road','sidewalk','building','wall','fence','pole','traffic light
                 'truck','bus','train','motorcycle','bicycle']
 yticklabels = xticklabels
 
+#for colour scaling remove 0 diagonalss
+cm += np.eye(num_class)*np.min(cm + (np.eye(num_class)*np.max(cm)))
+
 plt.figure(figsize=[20.48,10.24])
 sb.heatmap(cm, annot=True, fmt="g", xticklabels=xticklabels, yticklabels=yticklabels)
 img_name = "l2_dist.png"
@@ -75,17 +79,17 @@ plt.savefig(os.path.join(os.path.dirname(args.mean), img_name))
 plt.cla() #clear memory since no display happens
 plt.clf()
 
+if args.show:
+    c = [(128, 64,128),(244, 35,232),( 70, 70, 70),(102,102,156),(190,153,153),(153,153,153),(250,170, 30),(220,220,  0),
+        (107,142, 35),(152,251,152),( 70,130,180),(220, 20, 60),(255,  0,  0),(  0,  0,142),(  0,  0, 70),(  0, 60,100),
+        (  0, 80,100),(  0,  0,230),(119, 11, 32)]
+    c = np.array(c)/255
 
-c = [(128, 64,128),(244, 35,232),( 70, 70, 70),(102,102,156),(190,153,153),(153,153,153),(250,170, 30),(220,220,  0),
-    (107,142, 35),(152,251,152),( 70,130,180),(220, 20, 60),(255,  0,  0),(  0,  0,142),(  0,  0, 70),(  0, 60,100),
-    (  0, 80,100),(  0,  0,230),(119, 11, 32)]
-c = np.array(c)/255
+    mean = np.reshape(mean, [num_class, -1])
 
-mean = np.reshape(mean, [num_class, -1])
-
-pca = PCA(n_components=3)
-tformed = pca.fit_transform(mean)
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-ax.scatter(tformed[:,0], tformed[:,1], tformed[:,2], c=c)
-plt.show()
+    pca = PCA(n_components=3)
+    tformed = pca.fit_transform(mean)
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(tformed[:,0], tformed[:,1], tformed[:,2], c=c)
+    plt.show()

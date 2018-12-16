@@ -54,6 +54,12 @@ ICNET_GRADIENT_CHECKPOINTS = [
     "SharedFeatureExtractor/resnet_v1_50/block3/unit_6/bottleneck_v1/Relu",
     "SharedFeatureExtractor/resnet_v1_50/block4/unit_3/bottleneck_v1/Relu",
 ]
+ICNET_GRADIENT_CHECKPOINTS = [
+    "SharedFeatureExtractor/MobilenetV2/expanded_conv_4/output",
+    "SharedFeatureExtractor/MobilenetV2/expanded_conv_8/output",
+    "SharedFeatureExtractor/MobilenetV2/expanded_conv_12/output",
+    "SharedFeatureExtractor/MobilenetV2/expanded_conv_16/output",
+]
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
