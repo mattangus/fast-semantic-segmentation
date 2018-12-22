@@ -25,6 +25,7 @@ from libs.exporter import deploy_segmentation_inference_graph, _map_to_colored_l
 from libs.constants import CITYSCAPES_LABEL_COLORS, CITYSCAPES_LABEL_IDS, URSA_LABEL_COLORS
 from libs.metrics import mean_iou
 from libs.ursa_map import train_name
+from libs import stat_computer as stats
 
 #from third_party.mem_gradients_patch import gradients
 
@@ -67,6 +68,9 @@ flags.DEFINE_boolean('global_mean', False,'')
 flags.DEFINE_boolean('write_out', False,'')
 
 flags.DEFINE_boolean('debug', False,'')
+
+flags.DEFINE_boolean('use_patch', False,
+                     'avg pool over spatial dims')
 
 GRADIENT_CHECKPOINTS = [
     "SharedFeatureExtractor/MobilenetV2/expanded_conv_4/output",
@@ -163,26 +167,25 @@ def process_logits(final_logits, mean_v, var_inv_v, depth, pred_shape, num_class
     var_inv = var_inv_p
     mean = mean_p
 
-    if global_cov:
-        var_brod = tf.ones_like(var_inv)
-        var_inv = tf.reduce_sum(var_inv, axis=[0,1,2], keepdims=True)*var_brod
-    if global_mean:
-        mean_brod = tf.ones_like(mean)
-        mean = tf.reduce_mean(mean, axis=[0,1,2], keepdims=True)*mean_brod
-        # import pdb; pdb.set_trace()
+    if FLAGS.use_patch:
+        orig_shape = final_logits.get_shape().as_list()
+        new_shape = orig_shape
+        new_shape[-1] *= np.prod(stats.PATCH_SIZE)
+        final_logits = stats.get_patches(final_logits, stats.PATCH_SIZE)
+        final_logits = tf.reshape(final_logits, new_shape)
 
-    #import pdb; pdb.set_trace()
 
     in_shape = final_logits.get_shape().as_list()
-    var_inv = tf.reshape(var_inv, [-1, in_shape[-1], in_shape[-1]])
-    mean = tf.reshape(mean, [-1, num_classes, in_shape[-1]])
-
-    final_logits = tf.reshape(final_logits, [-1, depth])
+    #var_inv = tf.reshape(var_inv, [-1, in_shape[-1], in_shape[-1]])
+    #mean = tf.reshape(mean, [-1, num_classes, in_shape[-1]])
 
     mean_sub = tf.expand_dims(final_logits,-2) - mean
-    mean_sub = tf.expand_dims(tf.reshape(mean_sub, [-1, in_shape[-1]]), 1)
+    #final_logits = tf.reshape(final_logits, [-1, depth])
+    #mean_sub = tf.expand_dims(tf.reshape(mean_sub, [-1, in_shape[-1]]), 1)
+    mean_sub = tf.expand_dims(mean_sub, -2)
 
-    #var_inv = tf.tile(var_inv,[np.prod(in_shape[1:3]), 1, 1])
+    tile_size = [in_shape[0]] + ([1] * (mean_sub._rank()-1))
+    var_inv = tf.tile(var_inv, tile_size)
     left = tf.matmul(mean_sub, var_inv)
     dist = tf.squeeze(tf.matmul(left, mean_sub, transpose_b=True))
 
@@ -255,8 +258,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                         label_color_map, output_directory, num_classes, eval_dir,
                         min_dir, dist_dir):
     assert len(input_shape) == 3, "input shape must be rank 3"
-    effective_shape = [None] + input_shape
     batch = 1
+    effective_shape = [batch] + input_shape
 
     input_queue = create_input(input_dict, batch, 15, 15, 15)
     input_dict = input_queue.dequeue()
@@ -276,7 +279,10 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     pred_tensor = outputs[model.main_class_predictions_key]
     final_logits = outputs[model.final_logits_key]
 
-    stats_dir = os.path.join(eval_dir, "stats")
+    if FLAGS.use_patch:
+        stats_dir = os.path.join(eval_dir, "stats.patch")
+    else:
+        stats_dir = os.path.join(eval_dir, "stats")
     class_mean_file = os.path.join(stats_dir, "class_mean.npz")
     class_cov_file = os.path.join(stats_dir, "class_cov_inv.npz")
 
@@ -290,6 +296,14 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     var_dims = list(var_inv.shape[-2:])
     mean_dims = list(mean.shape[-2:])
     depth = mean_dims[-1]
+    
+    if global_cov:
+        var_brod = np.ones_like(var_inv)
+        var_inv = np.sum(var_inv, axis=(0,1,2), keepdims=True)*var_brod
+    if global_mean:
+        mean_brod = np.ones_like(mean)
+        mean = np.mean(mean, axis=(0,1,2), keepdims=True)*mean_brod
+        # import pdb; pdb.set_trace()
 
     #mean = np.reshape(mean, [-1] + mean_dims)
     #var_inv = np.reshape(var_inv, [-1] + var_dims)

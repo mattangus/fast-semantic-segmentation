@@ -29,6 +29,7 @@ if args.cov_inv:
 else:
     cov_inv = None
 
+#import pdb; pdb.set_trace()
 ed = np.expand_dims
 # mean = ed(ed(mean,1),1)
 #cov_inv = ed(ed(cov_inv,1),1)

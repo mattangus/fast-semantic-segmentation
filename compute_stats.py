@@ -14,8 +14,6 @@ import matplotlib.pyplot as plt
 import cv2
 from sklearn.feature_extraction import image
 import copy
-from abc import ABC, abstractmethod
-from fractions import gcd
 
 import extractors
 
@@ -26,6 +24,7 @@ from libs.exporter import deploy_segmentation_inference_graph
 from libs.constants import CITYSCAPES_LABEL_COLORS, CITYSCAPES_LABEL_IDS
 from libs.custom_metric import streaming_mean
 from submod.cholesky.cholesky_update import cholesky_update
+from libs import stat_computer as stats
 
 slim = tf.contrib.slim
 
@@ -65,6 +64,9 @@ flags.DEFINE_boolean('label_ids', False,
 flags.DEFINE_boolean('use_pool', False,
                      'avg pool over spatial dims')
 
+flags.DEFINE_boolean('use_patch', False,
+                     'avg pool over spatial dims')
+
 flags.DEFINE_integer("max_iters", None, "limit the number of iterations for large datasets")
 
 
@@ -92,73 +94,6 @@ def create_input(tensor_dict,
         capacity=prefetch_queue_capacity,
         dynamic_pad=False)
 
-class StatComputer(ABC):
-    
-    @abstractmethod
-    def get_update_op(self):
-        pass
-    
-    @abstractmethod
-    def save_variable(self, sess, stat_dir):
-        pass
-
-class MeanComputer(StatComputer):
-
-    def __init__(self, values, weights):
-        self.values = values
-        self.weights = weights
-
-        with tf.variable_scope("MeanComputer"):
-            self.mean, self.update = streaming_mean(self.values, self.weights, True)
-            self.mean = tf.expand_dims(self.mean,0)
-    
-    def get_update_op(self):
-        return self.update
-    
-    def save_variable(self, sess, file_name):
-        mean_value = sess.run(self.mean)
-        if np.isnan(mean_value).any():
-            print("nan time")
-            import pdb; pdb.set_trace()
-        print("saving to", file_name)
-        np.savez(file_name, mean_value)
-
-class CovComputer(StatComputer):
-
-    def __init__(self, values, mask, mean):
-        self.values = values
-        self.mask = mask
-        self.mean = mean
-
-        self.mean_sub = values - mean
-        self.batch_values = tf.reshape(self.mean_sub, [-1, tf.shape(values)[-1]])
-        self.batch_mask = tf.reshape(mask, [-1])
-        self.chol, self.chol_update = cholesky_update(self.batch_values, self.batch_mask, init=float(1.0))
-    
-    def get_update_op(self):
-        return self.chol_update
-    
-    def save_variable(self, sess, file_name):
-        def inv_fn(chol_mat):
-            cov = tf.matmul(tf.transpose(chol_mat,[0,2,1]),chol_mat)
-            inv_cov = tf.linalg.inv(cov)
-            return inv_cov
-        target_shape = self.values.get_shape().as_list()
-        in_size = self.chol.get_shape().as_list()[0]
-        to_check = [(a, in_size) for a in range(1,21)]
-        num_split = max(map(lambda v: gcd(v[0],v[1]), to_check))
-        print("using split", num_split)
-        chol_list = tf.split(self.chol, num_split, 0)
-        inv_list = [inv_fn(c) for c in chol_list]
-        class_cov_inv = np.concatenate([sess.run(i) for i in inv_list])
-        class_cov_inv = np.mean(np.reshape(class_cov_inv, target_shape + [target_shape[-1]]), 0, keepdims=True)
-        
-        if np.isnan(class_cov_inv).any():
-            print("nan time")
-            import pdb; pdb.set_trace()
-        print("saving to", file_name)
-        np.savez(file_name, class_cov_inv)
-
 
 def process_annot(annot_tensor, feat, num_classes):
     one_hot = tf.one_hot(annot_tensor, num_classes)
@@ -184,8 +119,12 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     input_tensor = input_dict[dataset_builder._IMAGE_FIELD]
     annot_tensor = input_dict[dataset_builder._LABEL_FIELD]
 
-    #input_tensor = tf.concat([input_tensor, tf.image.flip_left_right(input_tensor)], 0)
-    annot_tensor = annot_tensor[...,0] #tf.concat([annot_tensor[...,0], tf.image.flip_left_right(annot_tensor)[...,0]], 0)
+    flip = False
+    if flip:
+        input_tensor = tf.concat([input_tensor, tf.image.flip_left_right(input_tensor)], 0)
+        annot_tensor = tf.concat([annot_tensor[...,0], tf.image.flip_left_right(annot_tensor)[...,0]], 0)
+    else:
+        annot_tensor = annot_tensor[...,0]
 
     #import pdb; pdb.set_trace()
 
@@ -196,7 +135,10 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         pad_to_shape=pad_to_shape,
         label_color_map=label_color_map)
 
-    stats_dir = os.path.join(output_directory, "stats")
+    if FLAGS.use_patch:
+        stats_dir = os.path.join(output_directory, "stats.patch")
+    else:
+        stats_dir = os.path.join(output_directory, "stats")
     class_mean_file = os.path.join(stats_dir, "class_mean.npz")
     class_cov_file = os.path.join(stats_dir, "class_cov_inv.npz")
 
@@ -208,11 +150,19 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         if os.path.exists(class_mean_file):
             class_mean_v = np.load(class_mean_file)["arr_0"]
             first_pass = False
-            stat_computer = CovComputer(sorted_feats, avg_mask, class_mean_v)
+            if FLAGS.use_patch:
+                comp = stats.PatchCovComputer
+            else:
+                comp = stats.CovComputer
+            stat_computer = comp(sorted_feats, avg_mask, class_mean_v)
             output_file = class_cov_file
             print("second_pass")
         else:
-            stat_computer = MeanComputer(sorted_feats, avg_mask)
+            if FLAGS.use_patch:
+                comp = stats.PatchMeanComputer
+            else:
+                comp = stats.MeanComputer
+            stat_computer = comp(sorted_feats, avg_mask)
             output_file = class_mean_file
             print("first_pass")
 
