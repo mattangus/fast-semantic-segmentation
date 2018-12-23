@@ -134,64 +134,47 @@ class ImageFile(tfexample_decoder.ItemHandler):
     def filename_to_image(self, filename, channels, name=None):
         return tf.image.decode_png(tf.read_file(filename), channels=channels, name=name)
 
+def decode_image_file(filename, shape, name=None):
+    img_str = tf.read_file(filename)
+    img = tf.image.decode_png(img_str, channels=shape[-1], name=name)
+    img.set_shape(shape)
+
+    return img
+
 def _create_tf_example_decoder(input_reader_config):
 
-    keys_to_features = {
-        # 'image/encoded':
-        #     tf.FixedLenFeature((), tf.string, default_value=''),
-        'image/format':
-            tf.FixedLenFeature((), tf.string, default_value='jpeg'),
-        'image/filename':
-            tf.FixedLenFeature((), tf.string),
-        # 'image/height':
-        #     tf.FixedLenFeature((), tf.int64, default_value=0),
-        # 'image/width':
-        #     tf.FixedLenFeature((), tf.int64, default_value=0),
-        # 'image/segmentation/class/encoded':
-        #     tf.FixedLenFeature((), tf.string, default_value=''),
-        # 'image/segmentation/class/format':
-        #     tf.FixedLenFeature((), tf.string, default_value='png'),
-        'image/segmentation/filename':
-            tf.FixedLenFeature((), tf.string),
-        # 'image/segmentation/class/encoded': _bytes_feature(encoded_label.tostring()),
-        'image/segmentation/class/format':
-            tf.FixedLenFeature((), tf.string, default_value='png'),
-    }
+    def decode_example(ex_proto):
+        keys_to_features = {
+            'image/format':
+                tf.FixedLenFeature((), tf.string, default_value='jpeg'),
+            'image/filename':
+                tf.FixedLenFeature((), tf.string),
+            'image/segmentation/filename':
+                tf.FixedLenFeature((), tf.string),
+            'image/segmentation/class/format':
+                tf.FixedLenFeature((), tf.string, default_value='png'),
+        }
 
-    height = input_reader_config.height
-    width = input_reader_config.width
+        height = input_reader_config.height
+        width = input_reader_config.width
 
-    # input_image = filename_to_image(tfexample_decoder.Tensor('image/filename'), 3)
-    # ground_truth_image = filename_to_image(tfexample_decoder.Tensor('image/segmentation/filename'), 3)
+        decoded = tf.parse_single_example(ex_proto, keys_to_features)
 
-    input_image = ImageFile(
-        filename_key='image/filename',
-        shape=(height, width, 3))
-    ground_truth_image = ImageFile(
-        filename_key='image/segmentation/filename',
-        shape=(height, width, 1))
+        input_image = decode_image_file(
+            decoded["image/filename"],
+            (height, width, 3))
+        ground_truth_image = decode_image_file(
+            decoded["image/segmentation/filename"],
+            (height, width, 1))
 
-    # input_image = tfexample_decoder.Image(
-    #     image_key='image/encoded',
-    #     format_key='image/format',
-    #     shape=(height, width, 3), # CITYSCAPES SPECIFIC
-    #     channels=3)
-    # ground_truth_image = tfexample_decoder.Image(
-    #     image_key='image/segmentation/class/encoded',
-    #     format_key='image/segmentation/class/format',
-    #     shape=(height, width, 1), # CITYSCAPES SPECIFIC
-    #     channels=1)
-
-    items_to_handlers = {
-        _IMAGE_FIELD: input_image,
-        _IMAGE_NAME_FIELD: tfexample_decoder.Tensor('image/filename'),
-        # _HEIGHT_FIELD: tfexample_decoder.Tensor('image/height'),
-        # _WIDTH_FIELD: tfexample_decoder.Tensor('image/width'),
-        _LABEL_FIELD: ground_truth_image,
-    }
+        items_to_handlers = {
+            _IMAGE_FIELD: input_image,
+            _IMAGE_NAME_FIELD: decoded["image/filename"],
+            _LABEL_FIELD: ground_truth_image,
+        }
+        return items_to_handlers
     
-    return tfexample_decoder.TFExampleDecoder(
-        keys_to_features, items_to_handlers)
+    return decode_example
 
 
 def build(input_reader_config):
@@ -213,33 +196,17 @@ def build(input_reader_config):
 
     options = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.GZIP)
 
-    with tf.variable_scope("Dataset"):
-        train_dataset = dataset.Dataset(
-            data_sources=reader_config.input_path[:],
-            reader=functools.partial(tf.TFRecordReader, options=options),
-            decoder=decoder,
-            num_samples=input_reader_config.num_examples,
-            items_to_descriptions=_ITEMS_TO_DESCRIPTIONS)
-    with tf.variable_scope("DataProvider"):
-        provider = dataset_data_provider.DatasetDataProvider(
-            train_dataset,
-            num_readers=input_reader_config.num_readers,
-            num_epochs=(input_reader_config.num_epochs
-                if input_reader_config.num_epochs else None),
-            shuffle=input_reader_config.shuffle,
-            common_queue_capacity=3000,
-            seed=_DATASET_SHUFFLE_SEED)
+    dataset = tf.data.TFRecordDataset(reader_config.input_path[:],
+                            "GZIP",
+                            input_reader_config.num_readers)
+    
+    dataset = dataset.map(decoder, num_parallel_calls=input_reader_config.num_readers)
+    epochs = input_reader_config.num_epochs if input_reader_config.num_epochs > 0 else None
+    dataset = dataset.repeat(epochs)
+    
+    if input_reader_config.shuffle:
+        dataset = dataset.shuffle(input_reader_config.queue_capacity,
+                                    seed=_DATASET_SHUFFLE_SEED)
         print("shuffle seed:", _DATASET_SHUFFLE_SEED)
 
-        (image, image_name, label) = provider.get([_IMAGE_FIELD,
-            _IMAGE_NAME_FIELD,
-            #_HEIGHT_FIELD, _WIDTH_FIELD,
-            _LABEL_FIELD])
-    # label = tf.Print(label, ["label max", tf.reduce_max(label)])
-    return {
-        _IMAGE_FIELD: image,
-        _IMAGE_NAME_FIELD: image_name,
-        # _HEIGHT_FIELD: height,
-        # _WIDTH_FIELD: width,
-        _LABEL_FIELD: label,
-    }
+    return dataset

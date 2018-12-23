@@ -232,6 +232,8 @@ class PSPNetArchitecture(model.FastSegmentationModel):
             main_scaled_pred = tf.identity(main_scaled_pred, name="ScaledPreds")
             main_scaled_labels = tf.identity(main_scaled_labels, name="ScaledLabels")
 
+            #import pdb; pdb.set_trace()
+
             main_loss = self._classification_loss(main_scaled_pred,
                                             main_scaled_labels)
             losses_dict[self.main_loss_key] = (

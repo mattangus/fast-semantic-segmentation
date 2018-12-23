@@ -33,7 +33,7 @@ def create_training_input(create_input_fn,
                           batch_queue_threads,
                           prefetch_queue_capacity):
 
-    tensor_dict = create_input_fn()
+    dataset = create_input_fn()
     
     def cast_and_reshape(tensor_dict, dicy_key):
         items = tensor_dict[dicy_key]
@@ -41,23 +41,22 @@ def create_training_input(create_input_fn,
         tensor_dict[dicy_key] = float_images
         return tensor_dict
 
-    tensor_dict = cast_and_reshape(tensor_dict,
-                    dataset_builder._IMAGE_FIELD)
+    dataset = dataset.map(lambda x: cast_and_reshape(x,
+                                    dataset_builder._IMAGE_FIELD))
 
     if preprocess_fn is not None:
         preprocessor = preprocess_fn()
-        tensor_dict = preprocessor(tensor_dict)
+        dataset = dataset.map(preprocessor, batch_queue_threads)
 
-    batched_tensors = tf.train.batch(tensor_dict,
-        batch_size=batch_size, num_threads=batch_queue_threads,
-        capacity=batch_queue_capacity, dynamic_pad=True)
+    dataset = dataset.prefetch(prefetch_queue_capacity)
 
-    return prefetch_queue.prefetch_queue(batched_tensors,
-        capacity=prefetch_queue_capacity,
-        dynamic_pad=False)
+    dataset = dataset.batch(batch_size, drop_remainder=True)
+    #dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(batch_size))
+
+    return dataset
 
 
-def create_training_model_losses(input_queue, create_model_fn, train_config,
+def create_training_model_losses(input_fn, create_model_fn, train_config,
                                  train_dir=None, gradient_checkpoints=None, clone_scope=None):
 
     tf.logging.info('Creating clone %s', clone_scope)
@@ -69,24 +68,27 @@ def create_training_model_losses(input_queue, create_model_fn, train_config,
         tf.contrib.quantize.create_training_graph(
             quant_delay=train_config.quantize_with_delay)
 
-    read_data_list = input_queue.dequeue()
+    read_data_list = input_fn()
+    
     def extract_images_and_targets(read_data):
         images = read_data[dataset_builder._IMAGE_FIELD]
         labels = read_data[dataset_builder._LABEL_FIELD]
         return (images, labels)
 
-    (images, labels) = zip(*map(extract_images_and_targets, [read_data_list]))
+    (images, labels) = extract_images_and_targets(read_data_list)
     
     #labels = tf.Print(labels, ["labels max", tf.reduce_max(labels)])
 
     # Incase we need to do zero centering, we do it here
-    preprocessed_images = []
-    for image in images:
-        resized_image = segmentation_model.preprocess(image)
-        preprocessed_images.append(resized_image)
-    images = tf.concat(preprocessed_images, 0, name="Inputs")
+    # preprocessed_images = []
+    # for image in images:
+    #     resized_image = segmentation_model.preprocess(image)
+    #     preprocessed_images.append(resized_image)
+    # images = tf.concat(preprocessed_images, 0, name="Inputs")
+    images = segmentation_model.preprocess(images)
+    images = tf.identity(images, name="Inputs")
 
-    segmentation_model.provide_groundtruth(labels[0])
+    segmentation_model.provide_groundtruth(labels)
     prediction_dict = segmentation_model.predict(images)
 
     # Add checkpointing nodes to correct collection
@@ -212,14 +214,14 @@ def train_segmentation_model(create_model_fn,
             global_step = tf.train.get_or_create_global_step()
 
         with tf.device(deploy_config.inputs_device()): # CPU of each worker
-            input_queue = create_training_input(
+            dataset = create_training_input(
                 create_input_fn,
                 preprocess_fn,
                 per_clone_batch_size,
                 batch_queue_capacity=train_config.batch_queue_capacity,
                 batch_queue_threads=train_config.num_batch_queue_threads,
                 prefetch_queue_capacity=train_config.prefetch_queue_capacity)
-
+            data_iterator = dataset.make_one_shot_iterator()
         # Create the global step on the device storing the variables.
         with tf.device(deploy_config.variables_device()):
             # Note: it is assumed that any loss created by `model_fn`
@@ -230,7 +232,7 @@ def train_segmentation_model(create_model_fn,
                                     train_dir=train_dir,
                                     gradient_checkpoints=gradient_checkpoints)
             clones = model_deploy.create_clones(deploy_config,
-                model_fn, [input_queue])
+                model_fn, [data_iterator.get_next])
             first_clone_scope = deploy_config.clone_scope(0)
 
             if sync_bn_accross_gpu:
