@@ -88,3 +88,72 @@ class PSPNetICNetDilatedResnet50FeatureExtractor(
             'resnet_v1_50', dilated_resnet_v1.dilated_resnet_v1_50, is_training,
             filter_scale, features_stride, mid_downsample, batch_norm_trainable,
             reuse_weights, depth_multiplier, weight_decay)
+
+class PSPNetICNetDilatedResnet101FeatureExtractor(
+        PSPNetICNetResnetV1FeatureExtractor):
+    """ICNet Dilated Resnet 101 feature extractor implementation.
+
+    The implementation with dilations contains dilated convolutions in the last
+    two blocks of the network. This is how the resnet backbone is
+    implemented in the original ICNet paper.
+    """
+
+    def __init__(self,
+                 is_training,
+                 filter_scale=1.0,
+                 mid_downsample=False,
+                 features_stride=8,
+                 batch_norm_trainable=False,
+                 reuse_weights=None,
+                 depth_multiplier=None,
+                 weight_decay=0.0):
+        super(PSPNetICNetDilatedResnet101FeatureExtractor, self).__init__(
+            'resnet_v1_101', dilated_resnet_v1.dilated_resnet_v1_101, is_training,
+            filter_scale, features_stride, mid_downsample, batch_norm_trainable,
+            reuse_weights, depth_multiplier, weight_decay)
+
+class PSPNetICNetDilatedResnet152FeatureExtractor(
+        PSPNetICNetResnetV1FeatureExtractor):
+    """ICNet Dilated Resnet 152 feature extractor implementation.
+
+    The implementation with dilations contains dilated convolutions in the last
+    two blocks of the network. This is how the resnet backbone is
+    implemented in the original ICNet paper.
+    """
+
+    def __init__(self,
+                 is_training,
+                 filter_scale=1.0,
+                 mid_downsample=False,
+                 features_stride=8,
+                 batch_norm_trainable=False,
+                 reuse_weights=None,
+                 depth_multiplier=None,
+                 weight_decay=0.0):
+        super(PSPNetICNetDilatedResnet152FeatureExtractor, self).__init__(
+            'resnet_v1_152', dilated_resnet_v1.dilated_resnet_v1_152, is_training,
+            filter_scale, features_stride, mid_downsample, batch_norm_trainable,
+            reuse_weights, depth_multiplier, weight_decay)
+
+class PSPNetICNetDilatedResnet200FeatureExtractor(
+        PSPNetICNetResnetV1FeatureExtractor):
+    """ICNet Dilated Resnet 200 feature extractor implementation.
+
+    The implementation with dilations contains dilated convolutions in the last
+    two blocks of the network. This is how the resnet backbone is
+    implemented in the original ICNet paper.
+    """
+
+    def __init__(self,
+                 is_training,
+                 filter_scale=1.0,
+                 mid_downsample=False,
+                 features_stride=8,
+                 batch_norm_trainable=False,
+                 reuse_weights=None,
+                 depth_multiplier=None,
+                 weight_decay=0.0):
+        super(PSPNetICNetDilatedResnet200FeatureExtractor, self).__init__(
+            'resnet_v1_200', dilated_resnet_v1.dilated_resnet_v1_200, is_training,
+            filter_scale, features_stride, mid_downsample, batch_norm_trainable,
+            reuse_weights, depth_multiplier, weight_decay)

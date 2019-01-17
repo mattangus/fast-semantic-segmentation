@@ -220,13 +220,82 @@ def dilated_resnet_v1_50(inputs,
       resnet_v1_downsample_block('downsample_block', factor=0.5))
 
   blocks += [
-    resnet_v1_block('block2', base_depth=128/filter_scale,
-                    num_units=4, stride=2),
-    resnet_v1_block('block3', base_depth=256/filter_scale,
-                    num_units=6, stride=2, rate=2),
-    resnet_v1_block('block4', base_depth=512/filter_scale,
-                    num_units=3, stride=1, rate=4)]
+    resnet_v1_block('block2', base_depth=128/filter_scale,num_units=4, stride=2),
+    resnet_v1_block('block3', base_depth=256/filter_scale,num_units=6, stride=2, rate=2),
+    resnet_v1_block('block4', base_depth=512/filter_scale,num_units=3, stride=1, rate=4)]
 
   return resnet_v1(inputs, blocks, filter_scale, num_classes, is_training,
                    global_pool=global_pool,output_stride=output_stride,
                    include_root_block=True, reuse=reuse, scope=scope)
+
+def dilated_resnet_v1_101(inputs,
+                  num_classes=None,
+                  filter_scale=1.0,
+                  mid_downsample=False,
+                  is_training=True,
+                  global_pool=True,
+                  output_stride=None,
+                  reuse=None,
+                  scope='resnet_v1_101'):
+  """ResNet-101 model of [1]. See resnet_v1() for arg and return description."""
+  blocks = [resnet_v1_block('block1', base_depth=64/filter_scale, num_units=3, stride=2)]
+  if mid_downsample:
+    blocks.append(
+      resnet_v1_downsample_block('downsample_block', factor=0.5))
+  
+  blocks += [
+      resnet_v1_block('block2', base_depth=128/filter_scale, num_units=4, stride=2),
+      resnet_v1_block('block3', base_depth=256/filter_scale, num_units=23, stride=2, rate=2),
+      resnet_v1_block('block4', base_depth=512/filter_scale, num_units=3, stride=1, rate=4),
+  ]
+  return resnet_v1(inputs, blocks, filter_scale, num_classes, is_training,
+                  global_pool=global_pool,output_stride=output_stride,
+                  include_root_block=True, reuse=reuse, scope=scope)
+
+def dilated_resnet_v1_152(inputs,
+                  num_classes=None,
+                  filter_scale=1.0,
+                  mid_downsample=False,
+                  is_training=True,
+                  global_pool=True,
+                  output_stride=None,
+                  reuse=None,
+                  scope='resnet_v1_152'):
+  """ResNet-152 model of [1]. See resnet_v1() for arg and return description."""
+  blocks = [resnet_v1_block('block1', base_depth=64/filter_scale, num_units=3, stride=2)]
+  if mid_downsample:
+    blocks.append(
+      resnet_v1_downsample_block('downsample_block', factor=0.5))
+  
+  blocks += [
+      resnet_v1_block('block2', base_depth=128/filter_scale, num_units=8, stride=2),
+      resnet_v1_block('block3', base_depth=256/filter_scale, num_units=36, stride=2, rate=2),
+      resnet_v1_block('block4', base_depth=512/filter_scale, num_units=3, stride=1, rate=4),
+  ]
+  return resnet_v1(inputs, blocks, filter_scale, num_classes, is_training,
+                  global_pool=global_pool,output_stride=output_stride,
+                  include_root_block=True, reuse=reuse, scope=scope)
+
+def dilated_resnet_v1_200(inputs,
+                  num_classes=None,
+                  filter_scale=1.0,
+                  mid_downsample=False,
+                  is_training=True,
+                  global_pool=True,
+                  output_stride=None,
+                  reuse=None,
+                  scope='resnet_v1_200'):
+  """ResNet-200 model of [2]. See resnet_v1() for arg and return description."""
+  blocks = [resnet_v1_block('block1', base_depth=64/filter_scale, num_units=3, stride=2)]
+  if mid_downsample:
+    blocks.append(
+      resnet_v1_downsample_block('downsample_block', factor=0.5))
+  
+  blocks += [
+      resnet_v1_block('block2', base_depth=128/filter_scale, num_units=24, stride=2),
+      resnet_v1_block('block3', base_depth=256/filter_scale, num_units=36, stride=2, rate=2),
+      resnet_v1_block('block4', base_depth=512/filter_scale, num_units=3, stride=1, rate=4),
+  ]
+  return resnet_v1(inputs, blocks, filter_scale, num_classes, is_training,
+                  global_pool=global_pool,output_stride=output_stride,
+                  include_root_block=True, reuse=reuse, scope=scope)
