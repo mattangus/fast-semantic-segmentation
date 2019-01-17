@@ -99,6 +99,8 @@ class ImageFile(tfexample_decoder.ItemHandler):
     def __init__(self,
                 filename_key=None,
                 shape=None,
+                resize=(0,0),
+                method=tf.image.ResizeMethod.BILINEAR,
                 dtype=tf.uint8):
         """Initializes the image.
 
@@ -120,6 +122,8 @@ class ImageFile(tfexample_decoder.ItemHandler):
         super(ImageFile, self).__init__([filename_key])
         self._filename_key = filename_key
         self._shape = shape
+        self._resize = resize
+        self._method = method
         self._dtype = dtype
 
     def tensors_to_item(self, keys_to_tensors):
@@ -127,7 +131,11 @@ class ImageFile(tfexample_decoder.ItemHandler):
         filename = keys_to_tensors[self._filename_key]
         # filename = tf.Print(filename, [filename])
         img = self.filename_to_image(filename, self._shape[-1])
-        img.set_shape(self._shape)
+
+        if self._resize[0] != 0 and self._resize[1] != 0:
+            img = tf.image.resize_images(img, self._resize, method=self._method)
+        else:
+            img.set_shape(self._shape)
         
         return img
 
@@ -160,16 +168,21 @@ def _create_tf_example_decoder(input_reader_config):
 
     height = input_reader_config.height
     width = input_reader_config.width
+    rheight = input_reader_config.rheight
+    rwidth = input_reader_config.rwidth
 
     # input_image = filename_to_image(tfexample_decoder.Tensor('image/filename'), 3)
     # ground_truth_image = filename_to_image(tfexample_decoder.Tensor('image/segmentation/filename'), 3)
 
     input_image = ImageFile(
         filename_key='image/filename',
-        shape=(height, width, 3))
+        shape=(height, width, 3),
+        resize=(rheight, rwidth))
     ground_truth_image = ImageFile(
         filename_key='image/segmentation/filename',
-        shape=(height, width, 1))
+        shape=(height, width, 1),
+        resize=(rheight, rwidth),
+        method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
 
     # input_image = tfexample_decoder.Image(
     #     image_key='image/encoded',

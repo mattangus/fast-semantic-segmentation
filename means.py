@@ -46,7 +46,7 @@ def mahal(m, cov_inv, p):
     cov_inv = np.squeeze(cov_inv)
 
     left = np.matmul(temp, cov_inv)
-    dist = np.squeeze(np.matmul(left, np.transpose(temp, [0,1,3,2])))
+    dist = np.squeeze(np.sqrt(np.matmul(left, np.transpose(temp, [0,1,3,2]))))
     return np.mean(dist)
 
 def l2_norm(m, unused, p):
