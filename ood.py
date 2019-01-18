@@ -222,7 +222,8 @@ def process_logits(final_logits, mean_v, var_inv_v, depth, pred_shape, num_class
     dist = mahal_dist
 
     img_dist = tf.expand_dims(tf.reshape(dist, in_shape[1:-1] + [num_classes]), 0)
-    img_dist = tf.where(tf.equal(img_dist, tf.zeros_like(img_dist)), tf.ones_like(img_dist)*float("inf"), img_dist)
+    bad_pixel = tf.logical_or(tf.equal(img_dist, tf.zeros_like(img_dist)), tf.is_nan(img_dist))
+    img_dist = tf.where(bad_pixel, tf.ones_like(img_dist)*float("inf"), img_dist)
     full_dist = tf.image.resize_bilinear(img_dist, (pred_shape[1],pred_shape[2]))
     dist_class = tf.expand_dims(tf.argmin(full_dist, -1),-1)
     min_dist = tf.reduce_min(full_dist, -1)
@@ -456,12 +457,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         adv_img = tf.expand_dims(placeholder_tensor, 0)
 
     num_step = num_images // batch
+    dump_dir += "_" + str(epsilon)
 
-    all_mins = []
-    all_filters = []
-
-    x = None
-    y = None
     with tf.Session() as sess:
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
         tf.train.start_queue_runners(sess)
@@ -531,7 +528,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 # annot_out = res[8][0]
                 # n_values = np.max(annot_out) + 1
                 # one_hot_out = np.eye(n_values)[annot_out][...,0,:num_classes]
-                #import pdb; pdb.set_trace()
+                
+                import pdb; pdb.set_trace()
 
                 min_dist_v = np.expand_dims(np.nanmin(full_dist_out, -1), -1)
                 min_dist_v[np.logical_not(np.isfinite(min_dist_v))] = np.nanmin(full_dist_out)
