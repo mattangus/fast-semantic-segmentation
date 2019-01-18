@@ -43,6 +43,7 @@ def _get_outputs_from_inputs(model, input_tensors,
     # name tensor to make inference with frozen weights easier
     outputs_dict[model.main_class_predictions_key] = tf.identity(prediction_tensor,
         name=output_collection_name)
+    outputs_dict[model.unscaled_logits_key] = output_tensors
     return outputs_dict
 
 

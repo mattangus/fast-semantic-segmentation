@@ -383,6 +383,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     pred_tensor = outputs[model.main_class_predictions_key]
     final_logits = outputs[model.final_logits_key]
+    unscaled_logits = outputs[model.unscaled_logits_key]
 
     if FLAGS.use_patch:
         stats_dir = os.path.join(eval_dir, "stats.patch")
@@ -434,7 +435,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     input_fetch = [input_name, input_tensor, annot_tensor]
 
-    fetch = [pred_tensor, pred_colour, dist_colour, dist_class, full_dist, min_dist, iou_update, final_logits]
+    fetch = [pred_tensor, pred_colour, dist_colour, dist_class, full_dist, min_dist, iou_update, final_logits, unscaled_logits]
 
     # Add checkpointing nodes to correct collection
     if GRADIENT_CHECKPOINTS is not None:
@@ -525,6 +526,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 dist_out = res[2][0].astype(np.uint8)
                 full_dist_out = res[4][0]
                 min_dist_out = res[5][0]
+                unscaled_logits_out = res[8][0]
 
                 # annot_out = res[8][0]
                 # n_values = np.max(annot_out) + 1
@@ -557,7 +559,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 cv2.imwrite(save_location, prediction_colour)
                 cv2.imwrite(min_filename, min_dist_v)
                 cv2.imwrite(dist_filename, dist_out)
-                np.savez(dump_filename, min_dist_out)
+                np.savez(dump_filename, {"min": min_dist_out, "unscaled_logits": unscaled_logits_out})
             
             if FLAGS.debug:
                 dist_out = res[2][0].astype(np.uint8)

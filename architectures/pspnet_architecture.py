@@ -61,6 +61,10 @@ class PSPNetArchitecture(model.FastSegmentationModel):
     @property
     def main_class_predictions_key(self):
         return 'class_predictions'
+
+    @property
+    def unscaled_logits_key(self):
+        return 'unscaled_logits'
     
     @property
     def final_logits_key(self):
