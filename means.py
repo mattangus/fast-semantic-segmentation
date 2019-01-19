@@ -68,8 +68,10 @@ xticklabels = ['road','sidewalk','building','wall','fence','pole','traffic light
                 'truck','bus','train','motorcycle','bicycle']
 yticklabels = xticklabels
 
+print("mean distance:", np.mean(cm[np.triu_indices(cm.shape[0],1)]))
+
 #for colour scaling remove 0 diagonalss
-cm += np.eye(num_class)*np.min(cm + (np.eye(num_class)*np.max(cm)))
+#cm += np.eye(num_class)*np.min(cm + (np.eye(num_class)*np.max(cm)))
 
 plt.figure(figsize=[20.48,10.24])
 sb.heatmap(cm, annot=True, fmt="g", xticklabels=xticklabels, yticklabels=yticklabels)

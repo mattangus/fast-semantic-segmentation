@@ -80,12 +80,12 @@ flags.DEFINE_boolean('do_ood', False,
 flags.DEFINE_boolean('train_kernel', False,
                      'train a kernel for extracting edges')
 
-GRADIENT_CHECKPOINTS = [
-    "SharedFeatureExtractor/MobilenetV2/expanded_conv_4/output",
-    "SharedFeatureExtractor/MobilenetV2/expanded_conv_8/output",
-    "SharedFeatureExtractor/MobilenetV2/expanded_conv_12/output",
-    "SharedFeatureExtractor/MobilenetV2/expanded_conv_16/output",
-]
+# GRADIENT_CHECKPOINTS = [
+#     "SharedFeatureExtractor/MobilenetV2/expanded_conv_4/output",
+#     "SharedFeatureExtractor/MobilenetV2/expanded_conv_8/output",
+#     "SharedFeatureExtractor/MobilenetV2/expanded_conv_12/output",
+#     "SharedFeatureExtractor/MobilenetV2/expanded_conv_16/output",
+# ]
 
 def linkern(kernlen, space, power=2):
     x = np.linspace(-((kernlen-1)/2 + space), (kernlen-1)/2 + space, kernlen)
@@ -439,15 +439,15 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     fetch = [pred_tensor, pred_colour, dist_colour, dist_class, full_dist, min_dist, iou_update, final_logits, unscaled_logits]
 
     # Add checkpointing nodes to correct collection
-    if GRADIENT_CHECKPOINTS is not None:
-        tf.logging.info(
-            'Adding gradient checkpoints to `checkpoints` collection')
-        graph = tf.get_default_graph()
-        checkpoint_list = GRADIENT_CHECKPOINTS
-        for checkpoint_node_name in checkpoint_list:
-            curr_tensor_name = checkpoint_node_name + ":0"
-            node = graph.get_tensor_by_name(curr_tensor_name)
-            tf.add_to_collection('checkpoints', node)
+    # if GRADIENT_CHECKPOINTS is not None:
+    #     tf.logging.info(
+    #         'Adding gradient checkpoints to `checkpoints` collection')
+    #     graph = tf.get_default_graph()
+    #     checkpoint_list = GRADIENT_CHECKPOINTS
+    #     for checkpoint_node_name in checkpoint_list:
+    #         curr_tensor_name = checkpoint_node_name + ":0"
+    #         node = graph.get_tensor_by_name(curr_tensor_name)
+    #         tf.add_to_collection('checkpoints', node)
     
     grads = tf.gradients(min_dist, placeholder_tensor)
     epsilon = 0.0
@@ -458,6 +458,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     num_step = num_images // batch
     dump_dir += "_" + str(epsilon)
+    tf.gfile.MakeDirs(dump_dir)
 
     with tf.Session() as sess:
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
@@ -529,7 +530,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 # n_values = np.max(annot_out) + 1
                 # one_hot_out = np.eye(n_values)[annot_out][...,0,:num_classes]
                 
-                import pdb; pdb.set_trace()
+                #import pdb; pdb.set_trace()
 
                 min_dist_v = np.expand_dims(np.nanmin(full_dist_out, -1), -1)
                 min_dist_v[np.logical_not(np.isfinite(min_dist_v))] = np.nanmin(full_dist_out)
@@ -557,7 +558,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 cv2.imwrite(save_location, prediction_colour)
                 cv2.imwrite(min_filename, min_dist_v)
                 cv2.imwrite(dist_filename, dist_out)
-                np.savez(dump_filename, {"min": min_dist_out, "unscaled_logits": unscaled_logits_out})
+                np.savez(dump_filename, {"full": full_dist_out, "unscaled_logits": unscaled_logits_out})
             
             if FLAGS.debug:
                 dist_out = res[2][0].astype(np.uint8)
@@ -621,7 +622,7 @@ def main(_):
     tf.gfile.MakeDirs(min_dir)
     tf.gfile.MakeDirs(dist_dir)
     tf.gfile.MakeDirs(hist_dir)
-    tf.gfile.MakeDirs(dump_dir)
+    #tf.gfile.MakeDirs(dump_dir)
     pipeline_config = pipeline_pb2.PipelineConfig()
     with tf.gfile.GFile(FLAGS.config_path, 'r') as f:
         text_format.Merge(f.read(), pipeline_config)

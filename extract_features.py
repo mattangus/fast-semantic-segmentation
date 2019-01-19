@@ -6,21 +6,31 @@ from __future__ import print_function
 import os
 import timeit
 import numpy as np
-from PIL import Image
 import tensorflow as tf
 from google.protobuf import text_format
-import glob
+from numpy.core.umath_tests import inner1d
 import matplotlib.pyplot as plt
 import cv2
-import torch
-from sklearn.feature_extraction import image
-import copy
+from sklearn.decomposition import PCA
+#from sklearn.manifold import TSNE
+from MulticoreTSNE import MulticoreTSNE as TSNE
+from mpl_toolkits.mplot3d import Axes3D
+import random
+import colorsys
+from multiprocessing import Process, Queue, Pool
+import json
 
-from libs import sliding_window
 from protos import pipeline_pb2
-from builders import model_builder
-from libs.exporter import deploy_segmentation_inference_graph
-from libs.constants import CITYSCAPES_LABEL_COLORS, CITYSCAPES_LABEL_IDS
+from builders import model_builder, dataset_builder
+from libs.exporter import deploy_segmentation_inference_graph, _map_to_colored_labels
+from libs.constants import CITYSCAPES_LABEL_COLORS, CITYSCAPES_LABEL_IDS, URSA_LABEL_COLORS
+from libs.metrics import mean_iou
+from libs.ursa_map import train_name
+from libs import stat_computer as stats
+
+import scipy.stats as st
+
+#from third_party.mem_gradients_patch import gradients
 
 slim = tf.contrib.slim
 
@@ -28,14 +38,7 @@ flags = tf.app.flags
 
 FLAGS = flags.FLAGS
 
-tf.flags.DEFINE_string('cityscapes_dir', '',
-                       'Pattern matching ground truth images for Cityscapes.')
-
-tf.flags.DEFINE_string('input_pattern', '',
-                       'Cityscapes dataset root folder.')
-
-tf.flags.DEFINE_string('annot_pattern', '',
-                       'Pattern matching input images for Cityscapes.')
+prefetch_queue = slim.prefetch_queue
 
 flags.DEFINE_string('input_shape', '1024,2048,3', # default Cityscapes values
                     'The shape to use for inference. This should '
@@ -48,9 +51,6 @@ flags.DEFINE_string('pad_to_shape', '1025,2049', # default Cityscapes values
                      'Pad the input image to the specified shape. Must have '
                      'the shape specified as [height, width].')
 
-tf.flags.DEFINE_string('split_type', '',
-                       'Type of split: `train`, `test` or `val`.')
-
 flags.DEFINE_string('config_path', None,
                     'Path to a pipeline_pb2.TrainEvalPipelineConfig config '
                     'file.')
@@ -59,276 +59,257 @@ flags.DEFINE_string('trained_checkpoint', None,
                     'Path to trained checkpoint, typically of the form '
                     'path/to/model.ckpt')
 
-flags.DEFINE_string('output_dir', None, 'Path to write outputs images.')
+flags.DEFINE_string('eval_dir', None, 'Path to write outputs images.')
 
 flags.DEFINE_boolean('label_ids', False,
                      'Whether the output should be label ids.')
 
-_DEFAULT_PATTEN = {
-    'input': '*_leftImg8bit.png',
-    'label': '*_gtFine_labelTrainIds.png',
-}
+flags.DEFINE_boolean('do_ood', False,
+                     'use ood dataset if true, otherwise use eval set')
 
-_DEFAULT_DIR = {
-    'input': 'leftImg8bit',
-    'label': 'gtFine',
-}
+flags.DEFINE_boolean('debug', False,'')
 
-def _valid_file_ext(input_path):
-    ext = os.path.splitext(input_path)[-1].upper()
-    return ext in ['.JPG', '.JPEG', '.PNG']
+def create_input(tensor_dict,
+                batch_size,
+                batch_queue_capacity,
+                batch_queue_threads,
+                prefetch_queue_capacity):
 
+    def cast_and_reshape(tensor_dict, dicy_key):
+        items = tensor_dict[dicy_key]
+        float_images = tf.to_float(items)
+        tensor_dict[dicy_key] = float_images
+        return tensor_dict
 
-def _get_images_from_path(input_path):
-    image_file_paths = []
-    if os.path.isdir(input_path):
-        for dirpath,_,filenames in os.walk(input_path):
-            for f in filenames:
-                file_path = os.path.abspath(os.path.join(dirpath, f))
-                if not _valid_file_ext(file_path):
-                    raise ValueError('File must be JPG or PNG.')
-                image_file_paths.append(file_path)
-    else:
-        if not _valid_file_ext(input_path):
-            raise ValueError('File must be JPG or PNG.')
-        image_file_paths.append(input_path)
-    return image_file_paths
+    tensor_dict = cast_and_reshape(tensor_dict,
+                    dataset_builder._IMAGE_FIELD)
 
-# def compute_stats(final_logits):
-#     #m_k = m_k-1 + (x_k - m_k-1)/k
-#     #v_k = v_k-1 + (x_k - m_k-1)*(x_k - m_k)
-#     shape = final_logits.get_shape().as_list()
-#     if shape[0] != 1:
-#         raise RuntimeError("Must have batch size of 1")
+    batched_tensors = tf.train.batch(tensor_dict,
+        batch_size=batch_size, num_threads=batch_queue_threads,
+        capacity=batch_queue_capacity, dynamic_pad=True,
+        allow_smaller_final_batch=False)
+
+    return prefetch_queue.prefetch_queue(batched_tensors,
+        capacity=prefetch_queue_capacity,
+        dynamic_pad=False)
+
+def to_img(x):
+    if len(x.shape) == 2:
+        x = np.expand_dims(x, -1)
+    return (x/np.max(x)*255).astype(np.uint8)
+
+def create_tf_example(input_tensor, annot_tensor, input_name, pred_tensor, final_logits, unscaled_logits):
     
-#     with tf.variable_scope("ComputeStats"):
-#         k = tf.get_variable("k", initializer=1.)
-#         mk = tf.get_variable("mk", shape[1:])
-#         mkm1 = tf.get_variable("mkm1", shape[1:])
-#         vk = tf.get_variable("vk", shape[1:])
-#         xk = final_logits[0]
-#         update_mkm1 = tf.assign(mkm1, mk)
-#         temp = (xk - mkm1)
-#         update_mk = tf.assign_add(mk, temp/k)
-#         update_vk = tf.assign_add(vk, temp*(xk - mk))
-#     return mk, vk, [update_mkm1, update_mk, update_vk]
-def b_inv(b_mat):
-    eye = b_mat.new_ones(b_mat.size(-1)).diag().expand_as(b_mat)
-    b_inv, _ = torch.gesv(eye, b_mat)
-    return b_inv
+    def _bytes_feature(values):
+        return tf.train.Feature(
+            bytes_list=tf.train.BytesList(value=[values]))
 
-def compute_mean(m_km1, x_k, k, mask):
-    if m_km1 is None:
-        return torch.tensor(x_k), torch.ones(x_k.shape)
-    x_k = torch.tensor(x_k)
-    mask = torch.tensor(mask)
-    temp = (x_k - m_km1)*mask
-    m_k = m_km1 + temp/k
-    k += mask
-    return m_k, k
+    def _int64_feature(values):
+        if not isinstance(values, (tuple, list)):
+            values = [values]
+        return tf.train.Feature(int64_list=tf.train.Int64List(value=values))
 
-def compute_cov_inv(m, v_km1_inv, x_k, k, mask):
-    dim = x_k.shape[-1]
-    out_shape = list(x_k.shape[:-1]) + [dim, x_k.shape[-1]]
-    if v_km1_inv is None:
-        return torch.zeros(out_shape), torch.ones(out_shape)
-    x_k = torch.tensor(x_k)
-    mask = torch.tensor(mask)
-    mask = mask.unsqueeze(-1)
-    temp = (x_k - m)
-    sigma = torch.bmm(temp.view(-1, dim).unsqueeze(2), temp.view(-1, dim).unsqueeze(1)).view(out_shape)
-    v_k_inv = b_inv(sigma)*mask + v_km1_inv
-    k += mask
-    return v_k_inv, k
+    def tensor_to_example(tensor, name):
+        ret_dict = {
+            name + "/data": _bytes_feature(tensor.tostring())
+        }
+        return ret_dict
 
-def compute_stats(m_km1, v_km1_inv, x_k, k, first_pass, mask):
-    #numpy version might be better as tf order of updates matters
-    #not sure how to control that
-    # dim = x_k.shape[-1]
-    # out_shape = list(x_k.shape) + [dim]
-    # if m_km1 is None or v_km1 is None:
-    #     return torch.tensor(x_k), torch.zeros(out_shape)
-    # x_k = torch.tensor(x_k)
+    feature_dict = {
+        "filename": _bytes_feature(input_name)
+    }
     
-    # temp = (x_k - m_km1)
-    # m_k = m_km1 + temp/k
-    # temp2 = torch.bmm(temp.view(-1, dim).unsqueeze(2), (x_k - m_k).view(-1, dim).unsqueeze(1)).view(out_shape)
-    # v_k = v_km1 + temp2 #temp*(x_k - m_k)
-    # return m_k, v_k
-    if first_pass:
-        m_k, k = compute_mean(m_km1, x_k, k, mask)
-        v_k_inv = v_km1_inv
-    else:
-        m_k = m_km1
-        v_k_inv, k = compute_cov_inv(m_k, v_km1_inv, x_k, k, mask)
-    return m_k, v_k_inv, k
+    # input_res = global_pool.apipe(tensor_to_example, input_tensor, "input")
+    # annot_res = global_pool.apipe(tensor_to_example, annot_tensor, "annot")
+    # pred_res = global_pool.apipe(tensor_to_example, pred_tensor, "pred")
+    # final_res = global_pool.apipe(tensor_to_example, final_logits, "final_logits")
+    # unscaled_res = global_pool.apipe(tensor_to_example, unscaled_logits, "unscaled_logits")
 
-def process_annot(pred_shape, feat, num_classes):
-    annot_place = tf.placeholder(tf.uint8, pred_shape[1:-1], "annot_in")
-    one_hot = tf.one_hot(tf.expand_dims(annot_place,0), num_classes)
-    resized = tf.expand_dims(tf.image.resize_nearest_neighbor(one_hot, feat.get_shape().as_list()[1:-1]), -1)
-    sorted_feats = tf.expand_dims(feat, -2)*resized
-    avg_mask = tf.cast(tf.not_equal(resized, 0), tf.float32)
-    return annot_place, sorted_feats, avg_mask
+    # feature_dict.update(input_res.get())
+    # feature_dict.update(annot_res.get())
+    # feature_dict.update(pred_res.get())
+    # feature_dict.update(final_res.get())
+    # feature_dict.update(unscaled_res.get())
 
-def img_to_patch(input_shape, patch_size):
-    patch_place = tf.placeholder(tf.uint8, input_shape, "patch_in")
-    expand = tf.expand_dims(patch_place, 0)
-    patches = sliding_window.extract_patches(expand, patch_size[0], patch_size[1])
-    return patches, patch_place
+    feature_dict.update(tensor_to_example(input_tensor, "input"))
+    feature_dict.update(tensor_to_example(annot_tensor, "annot"))
+    feature_dict.update(tensor_to_example(pred_tensor, "pred"))
+    feature_dict.update(tensor_to_example(final_logits, "final_logits"))
+    feature_dict.update(tensor_to_example(unscaled_logits, "unscaled_logits"))
 
+    example = tf.train.Example(
+        features=tf.train.Features(feature=feature_dict))
+    return example.SerializeToString()
+
+def get_tensor_config(tensor):
+    return {
+        "dtype": tensor.dtype.name,
+        "shape": tensor.shape.as_list()
+    }
+
+def tf_serialize_example(f0,f1,f2,f3,f4,f5):
+    tf_string = tf.py_func(
+        create_tf_example, 
+        (f0,f1,f2,f3,f4,f5),  # pass these args to the above function.
+        tf.string)      # the return type is <a href="../../api_docs/python/tf#string"><code>tf.string</code></a>.
+    return tf.reshape(tf_string, ()) # The result is a scalar
+
+def write_thread(writer, queue):
+    while True:
+        record = queue.get()
+        if record is None:
+            break
+        writer.write(record)
+
+def write_example(file, data):
+    with open(file, "wb") as f:
+        f.write(data)
+
+class ParallelWriter(object):
+    
+    def __init__(self, filename, queue_size=32):
+        self.filename = filename
+        options = tf.io.TFRecordOptions(compression_type=tf.io.TFRecordCompressionType.GZIP)
+        self.record_writer = tf.io.TFRecordWriter(filename, options)
+
+        self.write_queue = Queue(queue_size)
+        self.p = Process(target=write_thread, args=(self.record_writer, self.write_queue))
+        self.p.start()
+    
+    def put(self, data):
+        self.write_queue.put(data)
+    
+    def close(self):
+        self.put(None)
+        self.p.join()
+    
+    def size(self):
+        return self.write_queue.qsize()
+
+def dataset_to_config(dataset):
+    shapes = dataset.output_shapes
+    types = dataset.output_types
+
+    config = {
+        "input": {
+            "dtype": types[0].name,
+            "shape": shapes[0].as_list(),
+        },
+        "annot": {
+            "dtype": types[1].name,
+            "shape": shapes[1].as_list(),
+        },
+        "pred": {
+            "dtype": types[3].name,
+            "shape": shapes[3].as_list(),
+        },
+        "final_logits": {
+            "dtype": types[4].name,
+            "shape": shapes[4].as_list(),
+        },
+        "unscaled_logits": {
+            "dtype": types[5].name,
+            "shape": shapes[5].as_list(),
+        }
+    }
+    return config
 def run_inference_graph(model, trained_checkpoint_prefix,
-                        input_images, annot_filenames, input_shape, pad_to_shape,
-                        label_color_map, output_directory, num_classes, patch_size):
-    effective_shape = copy.deepcopy(input_shape)
-    if patch_size:
-        effective_shape[:2] = patch_size
-        patches, patch_place = img_to_patch(input_shape, patch_size)
+                        input_dict, num_images, ignore_label, input_shape, pad_to_shape,
+                        label_color_map, num_classes, eval_dir):
+    assert len(input_shape) == 3, "input shape must be rank 3"
+    batch = 4
+    effective_shape = [batch] + input_shape
+
+    input_queue = create_input(input_dict, batch, 15, 15, 15)
+    input_dict = input_queue.dequeue()
+
+    input_tensor = input_dict[dataset_builder._IMAGE_FIELD]
+    annot_tensor = input_dict[dataset_builder._LABEL_FIELD]
+    input_name = input_dict[dataset_builder._IMAGE_NAME_FIELD]
 
     outputs, placeholder_tensor = deploy_segmentation_inference_graph(
         model=model,
         input_shape=effective_shape,
+        input=input_tensor,
         pad_to_shape=pad_to_shape,
-        label_color_map=label_color_map)
+        input_type=tf.float32)
 
     pred_tensor = outputs[model.main_class_predictions_key]
+    final_logits = outputs[model.final_logits_key]
+    unscaled_logits = outputs[model.unscaled_logits_key]
 
-    # pl_size = np.reduce_prod(placeholder_tensor.get_shape().as_list())
-    # placeholder_tensor = tf.random_uniform(tf.shape(placeholder_tensor),maxval=pl_size)
+    feats_dir = os.path.join(eval_dir, "feats")
+    os.makedirs(feats_dir, exist_ok=True)
+    if FLAGS.do_ood:
+        out_record = os.path.join(feats_dir, "feats_ood.record")
+        # out_record = os.path.join(eval_dir, "feats_ood")
+        #out_record = "/home/m2angus/feats_ood.record"
+    else:
+        out_record = os.path.join(feats_dir, "feats.record")
+        # out_record = os.path.join(eval_dir, "feats")
+        #out_record = "/home/m2angus/feats.record"
+    # os.makedirs(out_record, exist_ok=True)
 
-    stats_dir = os.path.join(output_directory, "stats")
-    class_mean_file = os.path.join(stats_dir, "class_mean.npz")
-    class_cov_file = os.path.join(stats_dir, "class_cov_inv.npz")
+    config_file = out_record + ".config"
+    features_dataset = tf.data.Dataset.from_tensor_slices((input_tensor, annot_tensor, input_name, pred_tensor, final_logits, unscaled_logits))
+    config = dataset_to_config(features_dataset)
+    features_dataset = features_dataset.map(tf_serialize_example, batch*2)
+    #features_dataset = features_dataset.prefetch(batch*2)
 
-    x = None
-    y = None
-    #m_k = None
-    #v_k_inv = None
-    class_m_k = None
-    class_v_k_inv = None
-    first_pass = True
+    with open(config_file, "w") as f:
+        json.dump(config, f)
 
-    # if os.path.exists(mean_file) and os.path.exists(class_mean_file):
-    if os.path.exists(class_mean_file):
-        #m_k = torch.tensor(np.load(mean_file)["arr_0"])
-        class_m_k = torch.tensor(np.load(class_mean_file)["arr_0"])
-        first_pass = False
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth=True
+    serialize_iter = features_dataset.make_initializable_iterator()
+    init = serialize_iter.initializer
+    next_elem = serialize_iter.get_next()
 
-    with tf.Session(config=config) as sess:
-        input_graph_def = tf.get_default_graph().as_graph_def()
+    # pool = Pool(32)
+
+    queue_size = 36
+    num_shards = 6
+    writers = [ParallelWriter(out_record + "-" + str(i), queue_size//num_shards) for i in range(num_shards)]
+
+    num_step = (num_images // batch) * batch
+
+    with tf.Session() as sess:
+        sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
+        tf.train.start_queue_runners(sess)
         saver = tf.train.Saver(tf.global_variables())
-        
-        # feats = outputs[model.final_logits_key]
-        # shape = feats.get_shape().as_list()
-        # feats = tf.reshape(feats,[-1, shape[-1]])
-        # temp = tf.constant(0, tf.float32, feats.get_shape().as_list())
-        # covar, update = tf.contrib.metrics.streaming_covariance(feats, temp)
-        # mean = [v for v in tf.get_collection(tf.GraphKeys.METRIC_VARIABLES) if "mean_prediction" in v.op.name][0]
-        # fetch += [update]
-        # sess.run(tf.global_variables_initializer())
-        # sess.run(tf.local_variables_initializer())
-        pred_shape = pred_tensor.get_shape().as_list()
-        annot_place, sorted_feats, avg_mask = process_annot(pred_shape, outputs[model.final_logits_key], num_classes)
-        fetch = [sorted_feats, avg_mask]
         saver.restore(sess, trained_checkpoint_prefix)
 
-        k = None
-        class_k = None
-        if first_pass:
-            passes = [True, False]
-        else:
-            passes = [False] #means loaded from disk
+        for idx in range(num_step):
+            start_time = timeit.default_timer()
+            if idx % batch == 0:
+                sess.run(init)
+            
+            data = sess.run(next_elem)
+            writers[idx % num_shards].put(data)
+            #write_queue.put(sess.run(next_elem))
+            # name = os.path.join(out_record, str(idx) + ".ex")
+            # data = sess.run(next_elem)
+            # pool.apply_async(write_example, (name, data))
+
+            # res = sess.run(fetch)
+            # input_out, annot_out, name_out, pred_out, logits_out, unscaled_out = res
+
+            # for i in range(batch):
+            #     ex = create_tf_example(input_out[i:i+1], annot_out[i:i+1], name_out[i],
+            #                         pred_out[i:i+1], logits_out[i:i+1], unscaled_out[i:i+1])
+
+            #     record_writer.write(ex)
+
+            elapsed = timeit.default_timer() - start_time
+            # print('{0:.4f} iter: {1}, size: {2}'.format(elapsed, idx+1, write_queue.qsize()))
+            print('{0:.4f} iter: {1}, size: {2}'.format(elapsed, idx+1, sum([w.size() for w in writers])))
+
+        # write_queue.put(None)
+        # p.join()
+        for w in writers:
+            w.close()
         
-        for first_pass in passes:
-            if first_pass:
-                print("first pass")
-            else:
-                print("second pass")
-            for idx in range(len(input_images)):
-                image_path = input_images[idx]
-                # image_raw = np.expand_dims(cv2.imread(image_path),0)
-                image_raw = cv2.imread(image_path)
-                # annot_raw = np.expand_dims(cv2.imread(annot_filenames[idx]),0)
-                annot_raw = cv2.imread(annot_filenames[idx])
-                # import pdb; pdb.set_trace()
-
-                start_time = timeit.default_timer()
-                for flipped in [False, True]:
-                    if flipped:
-                        image_raw = np.fliplr(image_raw)
-                        annot_raw = np.fliplr(annot_raw)
-
-                    if patch_size:
-                        all_image_raw = sess.run(patches, feed_dict={patch_place: image_raw})
-                        all_annot_raw = sess.run(patches, feed_dict={patch_place: annot_raw})
-                    else:
-                        all_image_raw = [image_raw]
-                        all_annot_raw = [annot_raw]
-
-                    for i in range(len(all_image_raw)):
-                        feed = {placeholder_tensor: all_image_raw[i]}
-                        feed[annot_place] = all_annot_raw[i,...,0]
-                        res = sess.run(fetch,feed_dict=feed)
-                        sorted_logits = res[0]
-                        mask = res[1]
-                        #m_k, v_k_inv, k = compute_stats(m_k, v_k_inv, logits, k, first_pass, mask)
-                        #for b in range(sorted_logits.shape[0]): #should only be 1
-                        class_m_k, class_v_k_inv, class_k = compute_stats(class_m_k, class_v_k_inv, sorted_logits, class_k, first_pass, mask)
-                    
-                    # if idx > 10:
-                    #     import pdb; pdb.set_trace()
-                # if idx > 5:
-                #     break
-                    
-                elapsed = timeit.default_timer() - start_time
-                print('{}) wall time: {}'.format(elapsed, idx+1))
-
-                # m_k, v_k_inv = sess.run([mean, covar])
-
-            os.makedirs(stats_dir, exist_ok=True)
-
-            if first_pass:
-                class_m_k_np = class_m_k.numpy()
-                #m_k = m_k.numpy()
-                #if np.isnan(m_k).any() or np.isnan(class_m_k).any():
-                if np.isnan(class_m_k_np).any():
-                    print("nan time")
-                    import pdb; pdb.set_trace()
-                #np.savez(mean_file, m_k)
-                np.savez(class_mean_file, class_m_k_np)
-            else:
-                #v_k = b_inv(v_k_inv)
-                #class_v_k = b_inv(class_v_k_inv)
-
-                class_v_k_inv_np = (class_v_k_inv/(class_k+1)).numpy()
-                #v_k_inv = (v_k_inv/(k+1)).numpy()
-
-                # if np.isnan(v_k_inv).any() or np.isnan(class_v_k_inv).any():
-                if np.isnan(class_v_k_inv_np).any():
-                    print("nan time")
-                    import pdb; pdb.set_trace()
-
-                np.savez(class_cov_file, class_v_k_inv_np)
-                # np.savez(cov_file, v_k_inv)
-        # print(save_location)
-        # res = 25
-        # vec_pred = np.fliplr(vec_pred)
-        # plt.quiver(vec_pred[0,::res,::res,0], vec_pred[0,::res,::res,1])
-        # plt.show()
-
-
 def main(_):
-    assert FLAGS.output_dir, '`output_dir` missing.'
-    assert FLAGS.split_type, '`split_type` missing.'
-    assert (FLAGS.cityscapes_dir) or \
-           (FLAGS.input_pattern and FLAGS.annot_pattern), \
-           'Must specify either `cityscapes_dir` or ' \
-           '`input_pattern` and `annot_pattern`.'
+    eval_dir = FLAGS.eval_dir
 
-    output_directory = FLAGS.output_dir
-    tf.gfile.MakeDirs(output_directory)
     pipeline_config = pipeline_pb2.PipelineConfig()
     with tf.gfile.GFile(FLAGS.config_path, 'r') as f:
         text_format.Merge(f.read(), pipeline_config)
@@ -341,34 +322,10 @@ def main(_):
     else:
         raise ValueError('Must supply `input_shape`')
 
-    patch_size = None
-    if FLAGS.patch_size:
-        patch_size = [int(dim) for dim in FLAGS.patch_size.split(',')]
-        assert len(patch_size) == 2, "patch size must be h,w"
-
     if FLAGS.pad_to_shape:
         pad_to_shape = [
             int(dim) if dim != '-1' else None
                 for dim in FLAGS.pad_to_shape.split(',')]
-
-    if FLAGS.cityscapes_dir:
-        search_image_files = os.path.join(FLAGS.cityscapes_dir,
-            _DEFAULT_DIR['input'], FLAGS.split_type, '*', _DEFAULT_PATTEN['input'])
-        search_annot_files = os.path.join(FLAGS.cityscapes_dir,
-            _DEFAULT_DIR['label'], FLAGS.split_type, '*', _DEFAULT_PATTEN['label'])
-        input_images = glob.glob(search_image_files)
-        annot_filenames = glob.glob(search_annot_files)
-    else:
-        input_images = glob.glob(FLAGS.input_pattern)
-        annot_filenames = glob.glob(FLAGS.annot_pattern)
-    
-    if len(input_images) != len(annot_filenames):
-        print("images: ", len(input_images))
-        print("annot: ", len(annot_filenames))
-        raise ValueError('Supplied patterns do not have image counts.')
-
-    input_images = sorted(input_images)
-    annot_filenames = sorted(annot_filenames)
 
     label_map = (CITYSCAPES_LABEL_IDS
         if FLAGS.label_ids else CITYSCAPES_LABEL_COLORS)
@@ -376,9 +333,19 @@ def main(_):
     num_classes, segmentation_model = model_builder.build(
         pipeline_config.model, is_training=False)
 
+    if FLAGS.do_ood:
+        input_reader = pipeline_config.ood_eval_input_reader
+    else:
+        input_reader = pipeline_config.eval_input_reader
+    
+    input_reader.num_epochs = 1
+    input_dict = dataset_builder.build(input_reader)
+
+    ignore_label = pipeline_config.ood_config.ignore_label
+
     run_inference_graph(segmentation_model, FLAGS.trained_checkpoint,
-                        input_images, annot_filenames, input_shape, pad_to_shape,
-                        label_map, output_directory, num_classes, patch_size)
+                        input_dict, input_reader.num_examples, ignore_label, input_shape, pad_to_shape,
+                        label_map, num_classes, eval_dir)
 
 if __name__ == '__main__':
     tf.app.run()
