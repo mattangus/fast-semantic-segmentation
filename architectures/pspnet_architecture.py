@@ -118,6 +118,8 @@ class PSPNetArchitecture(model.FastSegmentationModel):
                 else:
                     predictions = pred_fun()
                 
+                unscaled_logits = predictions
+
                 if self._train_reduce:
                     predictions_no_resize = final_logits
                 else:
@@ -128,7 +130,8 @@ class PSPNetArchitecture(model.FastSegmentationModel):
             # Outputs with auxilarary loss for training
             prediction_dict = {
                 self.main_class_predictions_key: predictions,
-                self.final_logits_key: final_logits }
+                self.final_logits_key: final_logits,
+                self.unscaled_logits_key: unscaled_logits }
             # Aux loss as described in PSPNet paper
             if self._is_training and self._use_aux_loss:
                 with tf.variable_scope('AuxPredictions'):
