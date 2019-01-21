@@ -19,3 +19,16 @@ checkpoint
 *.ckpt
 *.txt
 *.pb
+*.record
+*.npz
+
+.vscode/
+datasets/
+eval_gta_log/
+eval_logs/
+mobilenet_trained/
+old_gta_eval/
+pspnet_trained/
+remote/
+train_gta_log/
+train_logs/
