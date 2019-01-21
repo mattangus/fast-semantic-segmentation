@@ -61,11 +61,10 @@ flags.DEFINE_string('trained_checkpoint', None,
 
 flags.DEFINE_string('eval_dir', None, 'Path to write outputs images.')
 
+flags.DEFINE_string('split', None, 'either "train" or "eval" or "ood"')
+
 flags.DEFINE_boolean('label_ids', False,
                      'Whether the output should be label ids.')
-
-flags.DEFINE_boolean('do_ood', False,
-                     'use ood dataset if true, otherwise use eval set')
 
 flags.DEFINE_boolean('debug', False,'')
 
@@ -98,7 +97,7 @@ def to_img(x):
         x = np.expand_dims(x, -1)
     return (x/np.max(x)*255).astype(np.uint8)
 
-def create_tf_example(input_tensor, annot_tensor, input_name, pred_tensor, final_logits, unscaled_logits):
+def create_tf_example(input_tensor, annot_tensor, final_logits, unscaled_logits, input_name):
     
     def _bytes_feature(values):
         return tf.train.Feature(
@@ -133,9 +132,9 @@ def create_tf_example(input_tensor, annot_tensor, input_name, pred_tensor, final
 
     feature_dict.update(tensor_to_example(input_tensor, "input"))
     feature_dict.update(tensor_to_example(annot_tensor, "annot"))
-    feature_dict.update(tensor_to_example(pred_tensor, "pred"))
     feature_dict.update(tensor_to_example(final_logits, "final_logits"))
     feature_dict.update(tensor_to_example(unscaled_logits, "unscaled_logits"))
+    # feature_dict.update(tensor_to_example(grads, "grads"))
 
     example = tf.train.Example(
         features=tf.train.Features(feature=feature_dict))
@@ -147,10 +146,10 @@ def get_tensor_config(tensor):
         "shape": tensor.shape.as_list()
     }
 
-def tf_serialize_example(f0,f1,f2,f3,f4,f5):
+def tf_serialize_example(f0,f1,f2,f3,f4):
     tf_string = tf.py_func(
         create_tf_example, 
-        (f0,f1,f2,f3,f4,f5),  # pass these args to the above function.
+        (f0,f1,f2,f3,f4),  # pass these args to the above function.
         tf.string)      # the return type is <a href="../../api_docs/python/tf#string"><code>tf.string</code></a>.
     return tf.reshape(tf_string, ()) # The result is a scalar
 
@@ -160,6 +159,7 @@ def write_thread(writer, queue):
         if record is None:
             break
         writer.write(record)
+    print("thread complete")
 
 def write_example(file, data):
     with open(file, "wb") as f:
@@ -182,6 +182,9 @@ class ParallelWriter(object):
     def close(self):
         self.put(None)
         self.p.join()
+        self.record_writer.flush()
+        self.record_writer.close()
+        print("closed writer")
     
     def size(self):
         return self.write_queue.qsize()
@@ -199,22 +202,22 @@ def dataset_to_config(dataset):
             "dtype": types[1].name,
             "shape": shapes[1].as_list(),
         },
-        "pred": {
+        "final_logits": {
+            "dtype": types[2].name,
+            "shape": shapes[2].as_list(),
+        },
+        "unscaled_logits": {
             "dtype": types[3].name,
             "shape": shapes[3].as_list(),
         },
-        "final_logits": {
-            "dtype": types[4].name,
-            "shape": shapes[4].as_list(),
-        },
-        "unscaled_logits": {
-            "dtype": types[5].name,
-            "shape": shapes[5].as_list(),
-        }
+        # "grads": {
+        #     "dtype": types[4].name,
+        #     "shape": shapes[4].as_list(),
+        # }
     }
     return config
 def run_inference_graph(model, trained_checkpoint_prefix,
-                        input_dict, num_images, ignore_label, input_shape, pad_to_shape,
+                        input_dict, num_images, input_shape, pad_to_shape,
                         label_color_map, num_classes, eval_dir):
     assert len(input_shape) == 3, "input shape must be rank 3"
     batch = 4
@@ -227,34 +230,31 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     annot_tensor = input_dict[dataset_builder._LABEL_FIELD]
     input_name = input_dict[dataset_builder._IMAGE_NAME_FIELD]
 
-    outputs, placeholder_tensor = deploy_segmentation_inference_graph(
+    outputs, _ = deploy_segmentation_inference_graph(
         model=model,
         input_shape=effective_shape,
         input=input_tensor,
         pad_to_shape=pad_to_shape,
         input_type=tf.float32)
 
-    pred_tensor = outputs[model.main_class_predictions_key]
+    #pred_tensor = outputs[model.main_class_predictions_key]
     final_logits = outputs[model.final_logits_key]
     unscaled_logits = outputs[model.unscaled_logits_key]
 
+    # grads = tf.gradients(unscaled_logits, input_tensor)
+    # eps = tf.placeholder(tf.float32, (), "eps")
+    # adv_img = input_tensor - eps*tf.sign(grads)
+
+    # import pdb; pdb.set_trace()
+
     feats_dir = os.path.join(eval_dir, "feats")
     os.makedirs(feats_dir, exist_ok=True)
-    if FLAGS.do_ood:
-        out_record = os.path.join(feats_dir, "feats_ood.record")
-        # out_record = os.path.join(eval_dir, "feats_ood")
-        #out_record = "/home/m2angus/feats_ood.record"
-    else:
-        out_record = os.path.join(feats_dir, "feats.record")
-        # out_record = os.path.join(eval_dir, "feats")
-        #out_record = "/home/m2angus/feats.record"
-    # os.makedirs(out_record, exist_ok=True)
+    out_record = os.path.join(feats_dir, "feats_" + FLAGS.split + ".record")
 
     config_file = out_record + ".config"
-    features_dataset = tf.data.Dataset.from_tensor_slices((input_tensor, annot_tensor, input_name, pred_tensor, final_logits, unscaled_logits))
+    features_dataset = tf.data.Dataset.from_tensor_slices((input_tensor, annot_tensor, final_logits, unscaled_logits, input_name))
     config = dataset_to_config(features_dataset)
     features_dataset = features_dataset.map(tf_serialize_example, batch*2)
-    #features_dataset = features_dataset.prefetch(batch*2)
 
     with open(config_file, "w") as f:
         json.dump(config, f)
@@ -284,19 +284,6 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             
             data = sess.run(next_elem)
             writers[idx % num_shards].put(data)
-            #write_queue.put(sess.run(next_elem))
-            # name = os.path.join(out_record, str(idx) + ".ex")
-            # data = sess.run(next_elem)
-            # pool.apply_async(write_example, (name, data))
-
-            # res = sess.run(fetch)
-            # input_out, annot_out, name_out, pred_out, logits_out, unscaled_out = res
-
-            # for i in range(batch):
-            #     ex = create_tf_example(input_out[i:i+1], annot_out[i:i+1], name_out[i],
-            #                         pred_out[i:i+1], logits_out[i:i+1], unscaled_out[i:i+1])
-
-            #     record_writer.write(ex)
 
             elapsed = timeit.default_timer() - start_time
             # print('{0:.4f} iter: {1}, size: {2}'.format(elapsed, idx+1, write_queue.qsize()))
@@ -333,18 +320,20 @@ def main(_):
     num_classes, segmentation_model = model_builder.build(
         pipeline_config.model, is_training=False)
 
-    if FLAGS.do_ood:
+    if FLAGS.split == "ood":
         input_reader = pipeline_config.ood_eval_input_reader
-    else:
+    elif FLAGS.split == "eval":
         input_reader = pipeline_config.eval_input_reader
+    elif FLAGS.split == "train":
+        input_reader = pipeline_config.train_input_reader
+    else:
+        raise ValueError("dataset")
     
     input_reader.num_epochs = 1
     input_dict = dataset_builder.build(input_reader)
 
-    ignore_label = pipeline_config.ood_config.ignore_label
-
     run_inference_graph(segmentation_model, FLAGS.trained_checkpoint,
-                        input_dict, input_reader.num_examples, ignore_label, input_shape, pad_to_shape,
+                        input_dict, input_reader.num_examples, input_shape, pad_to_shape,
                         label_map, num_classes, eval_dir)
 
 if __name__ == '__main__':

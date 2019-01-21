@@ -25,6 +25,7 @@ from libs.constants import CITYSCAPES_LABEL_COLORS, CITYSCAPES_LABEL_IDS
 from libs.custom_metric import streaming_mean
 from submod.cholesky.cholesky_update import cholesky_update
 from libs import stat_computer as stats
+import feature_reader
 
 slim = tf.contrib.slim
 
@@ -52,10 +53,6 @@ flags.DEFINE_string('config_path', None,
                     'Path to a pipeline_pb2.TrainEvalPipelineConfig config '
                     'file.')
 
-flags.DEFINE_string('trained_checkpoint', None,
-                    'Path to trained checkpoint, typically of the form '
-                    'path/to/model.ckpt')
-
 flags.DEFINE_string('output_dir', None, 'Path to write outputs images.')
 
 flags.DEFINE_boolean('label_ids', False,
@@ -67,7 +64,7 @@ flags.DEFINE_boolean('use_pool', False,
 flags.DEFINE_boolean('use_patch', False,
                      'avg pool over spatial dims')
 
-flags.DEFINE_integer("max_iters", None, "limit the number of iterations for large datasets")
+flags.DEFINE_integer("max_iters", 1000000, "limit the number of iterations for large datasets")
 
 
 def create_input(tensor_dict,
@@ -102,23 +99,18 @@ def process_annot(annot_tensor, feat, num_classes):
     avg_mask = tf.cast(tf.not_equal(resized, 0), tf.float32)
     return avg_mask, sorted_feats
 
-def run_inference_graph(model, trained_checkpoint_prefix,
-                        input_dict, num_images, input_shape, pad_to_shape,
+def run_inference_graph(dataset, batch, num_images, input_shape, pad_to_shape,
                         label_color_map, output_directory, num_classes, patch_size):
-    assert len(input_shape) == 3, "input shape must be rank 3"
-    effective_shape = [None] + input_shape
 
-    if isinstance(model._feature_extractor, resnet_ex_class):
-        batch = 1
-    elif isinstance(model._feature_extractor, mobilenet_ex_class):
-        batch = 1
+    iterator = dataset.make_one_shot_iterator()
+    next_elem = iterator.get_next()
 
-    input_queue = create_input(input_dict, batch, 15, 15, 15)
-    input_dict = input_queue.dequeue()
+    input_tensor = next_elem["input"]
+    annot_tensor = next_elem["annot"]
+    final_logits = next_elem["final_logits"]
+    unscaled_logits = next_elem["unscaled_logits"]
 
-    input_tensor = input_dict[dataset_builder._IMAGE_FIELD]
-    annot_tensor = input_dict[dataset_builder._LABEL_FIELD]
-
+    #can't flip with extracted features :(
     flip = False
     if flip:
         input_tensor = tf.concat([input_tensor, tf.image.flip_left_right(input_tensor)], 0)
@@ -128,59 +120,40 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     #import pdb; pdb.set_trace()
 
-    outputs, placeholder_tensor = deploy_segmentation_inference_graph(
-        model=model,
-        input_shape=effective_shape,
-        input=input_tensor,
-        pad_to_shape=pad_to_shape,
-        label_color_map=label_color_map)
-
-    if FLAGS.use_patch:
-        stats_dir = os.path.join(output_directory, "stats.patch")
-    else:
-        stats_dir = os.path.join(output_directory, "stats")
+    stats_dir = os.path.join(output_directory, "stats")
     class_mean_file = os.path.join(stats_dir, "class_mean.npz")
     class_cov_file = os.path.join(stats_dir, "class_cov_inv.npz")
 
     first_pass = True
-    with tf.device("gpu:1"):
-        avg_mask, sorted_feats = process_annot(annot_tensor, outputs[model.final_logits_key], num_classes)
+    avg_mask, sorted_feats = process_annot(annot_tensor, final_logits, num_classes)
 
-        # if os.path.exists(mean_file) and os.path.exists(class_mean_file):
-        if os.path.exists(class_mean_file):
-            class_mean_v = np.load(class_mean_file)["arr_0"]
-            first_pass = False
-            if FLAGS.use_patch:
-                comp = stats.PatchCovComputer
-            else:
-                comp = stats.CovComputer
-            stat_computer = comp(sorted_feats, avg_mask, class_mean_v)
-            output_file = class_cov_file
-            print("second_pass")
+    # if os.path.exists(mean_file) and os.path.exists(class_mean_file):
+    if os.path.exists(class_mean_file):
+        class_mean_v = np.load(class_mean_file)["arr_0"]
+        first_pass = False
+        if FLAGS.use_patch:
+            comp = stats.PatchCovComputer
         else:
-            if FLAGS.use_patch:
-                comp = stats.PatchMeanComputer
-            else:
-                comp = stats.MeanComputer
-            stat_computer = comp(sorted_feats, avg_mask)
-            output_file = class_mean_file
-            print("first_pass")
+            comp = stats.CovComputer
+        stat_computer = comp(sorted_feats, avg_mask, class_mean_v)
+        output_file = class_cov_file
+        print("second_pass")
+    else:
+        if FLAGS.use_patch:
+            comp = stats.PatchMeanComputer
+        else:
+            comp = stats.MeanComputer
+        stat_computer = comp(sorted_feats, avg_mask)
+        output_file = class_mean_file
+        print("first_pass")
 
-        update_op = stat_computer.get_update_op()
+    update_op = stat_computer.get_update_op()
     
-    coord = tf.train.Coordinator()
     config = tf.ConfigProto()
     #config.gpu_options.allow_growth=True
 
-    full_eye = None
-    coord = tf.train.Coordinator()
-
     with tf.Session(config=config) as sess:
-        saver = tf.train.Saver(tf.global_variables())
-
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-        saver.restore(sess, trained_checkpoint_prefix)
 
         k = None
         class_k = None
@@ -189,21 +162,25 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         for idx in range(num_step):
             start_time = timeit.default_timer()
 
-            sess.run(update_op)
+            # if (idx+1)*batch ==2888:
+            #     import pdb; pdb.set_trace()
+            
+            try:
+                sess.run(update_op)
+            except tf.errors.DataLossError:
+                print("caught dataloss")
+                break
 
             elapsed = timeit.default_timer() - start_time
             end = "\r"
             if idx % 50 == 0:
                 #every now and then do regular print
                 end = "\n"
-            print('{0:.4f} wall time: {1}'.format(elapsed/batch, (idx+1)*batch), end=end)
-        print('{0:.4f} wall time: {1}'.format(elapsed/batch, (idx+1)*batch))
+            print('{0:.4f}: {1}'.format(elapsed/batch, (idx+1)*batch), end=end)
+        print('{0:.4f}: {1}'.format(elapsed/batch, (idx+1)*batch))
         os.makedirs(stats_dir, exist_ok=True)
 
         stat_computer.save_variable(sess, output_file)
-
-        coord.request_stop()
-        coord.join(threads)
 
 
 def main(_):
@@ -236,19 +213,17 @@ def main(_):
     label_map = (CITYSCAPES_LABEL_IDS
         if FLAGS.label_ids else CITYSCAPES_LABEL_COLORS)
 
-    num_classes, segmentation_model = model_builder.build(
-        pipeline_config.model, is_training=False)
+    batch = 1
 
-    #input_reader = pipeline_config.eval_input_reader
+    feats_dir = os.path.join(output_directory, "feats")
+    dataset_filter = os.path.join(feats_dir, "feats_train.record")
+    dataset = feature_reader.get_feature_dataset(dataset_filter, batch, drop_remain=True)
+
     input_reader = pipeline_config.train_input_reader
-    input_reader.shuffle = False
-    input_reader.num_epochs = 1
-    input_dict = dataset_builder.build(input_reader)
-
     iters = min(input_reader.num_examples, FLAGS.max_iters)
+    num_classes = pipeline_config.model.pspnet.num_classes
 
-    run_inference_graph(segmentation_model, FLAGS.trained_checkpoint,
-                        input_dict, iters, input_shape, pad_to_shape,
+    run_inference_graph(dataset, batch, iters, input_shape, pad_to_shape,
                         label_map, output_directory, num_classes, patch_size)
 
 if __name__ == '__main__':

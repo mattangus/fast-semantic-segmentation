@@ -18,6 +18,7 @@ from MulticoreTSNE import MulticoreTSNE as TSNE
 from mpl_toolkits.mplot3d import Axes3D
 import random
 import colorsys
+import scipy.stats as st
 
 from protos import pipeline_pb2
 from builders import model_builder, dataset_builder
@@ -26,8 +27,7 @@ from libs.constants import CITYSCAPES_LABEL_COLORS, CITYSCAPES_LABEL_IDS, URSA_L
 from libs.metrics import mean_iou
 from libs.ursa_map import train_name
 from libs import stat_computer as stats
-
-import scipy.stats as st
+import feature_reader
 
 #from third_party.mem_gradients_patch import gradients
 
@@ -189,10 +189,10 @@ def nan_to_num(val):
 #     return dist_class, full_dist, min_dist_v, mean_p, var_inv_p #, [temp, temp2, left, dist, img_dist]
 
 def process_logits(final_logits, mean_v, var_inv_v, depth, pred_shape, num_classes, global_cov, global_mean):
-    mean_p = tf.placeholder(tf.float32, mean_v.shape, "mean")
-    var_inv_p = tf.placeholder(tf.float32, var_inv_v.shape, "var_inv")
-    var_inv = var_inv_p
-    mean = mean_p
+    mean_p = tf.placeholder(tf.float32, mean_v.shape, "mean_p")
+    var_inv_p = tf.placeholder(tf.float32, var_inv_v.shape, "var_inv_p")
+    mean = tf.get_variable("mean", initializer=mean_p)
+    var_inv = tf.get_variable("var_inv", initializer=var_inv_p)
 
     if FLAGS.use_patch:
         orig_shape = final_logits.get_shape().as_list()
@@ -203,6 +203,7 @@ def process_logits(final_logits, mean_v, var_inv_v, depth, pred_shape, num_class
 
 
     in_shape = final_logits.get_shape().as_list()
+    dyn_shape = tf.shape(final_logits)
     #var_inv = tf.reshape(var_inv, [-1, in_shape[-1], in_shape[-1]])
     #mean = tf.reshape(mean, [-1, num_classes, in_shape[-1]])
 
@@ -211,7 +212,7 @@ def process_logits(final_logits, mean_v, var_inv_v, depth, pred_shape, num_class
     #mean_sub = tf.expand_dims(tf.reshape(mean_sub, [-1, in_shape[-1]]), 1)
     mean_sub = tf.expand_dims(mean_sub, -2)
 
-    tile_size = [in_shape[0]] + ([1] * (mean_sub._rank()-1))
+    tile_size = [dyn_shape[0]] + ([1] * (mean_sub._rank()-1))
     var_inv = tf.tile(var_inv, tile_size)
     left = tf.matmul(mean_sub, var_inv)
     mahal_dist = tf.squeeze(tf.sqrt(tf.matmul(left, mean_sub, transpose_b=True)))
@@ -354,42 +355,28 @@ def train_kernel(img, edges, sess, img_pl, edges_pl, loss, train_step, filter):
     
     return sess.run(filter)
 
-def run_inference_graph(model, trained_checkpoint_prefix,
-                        input_dict, num_images, ignore_label, input_shape, pad_to_shape,
+def run_inference_graph(dataset, batch, num_images, ignore_label, input_shape, pad_to_shape,
                         label_color_map, output_directory, num_classes, eval_dir,
                         min_dir, dist_dir, hist_dir, dump_dir):
     assert len(input_shape) == 3, "input shape must be rank 3"
-    batch = 1
     do_ood = FLAGS.do_ood
     #from normalise_data.py
     mean_value = 646604.7
     std_value = np.sqrt(28830410695.369247)
     thresh = (-0.6853718 * std_value) + mean_value
-    effective_shape = [batch] + input_shape
 
-    input_queue = create_input(input_dict, batch, 15, 15, 15)
-    input_dict = input_queue.dequeue()
+    iterator = dataset.make_one_shot_iterator()
+    next_elem = iterator.get_next()
 
-    input_tensor = input_dict[dataset_builder._IMAGE_FIELD]
-    annot_tensor = input_dict[dataset_builder._LABEL_FIELD]
-    input_name = input_dict[dataset_builder._IMAGE_NAME_FIELD]
+    input_name = next_elem["filename"]
+    input_tensor = next_elem["input"]
+    annot_tensor = next_elem["annot"]
+    final_logits = next_elem["final_logits"]
+    unscaled_logits = next_elem["unscaled_logits"]
+    pred_tensor = tf.image.resize_bilinear(unscaled_logits, annot_tensor.shape.as_list()[1:3])
+    pred_tensor = tf.expand_dims(tf.argmax(pred_tensor, -1),-1)
 
-    annot_pl = tf.placeholder(tf.float32, annot_tensor.get_shape().as_list())
-    outputs, placeholder_tensor = deploy_segmentation_inference_graph(
-        model=model,
-        input_shape=effective_shape,
-        #input=input_tensor,
-        pad_to_shape=pad_to_shape,
-        input_type=tf.float32)
-
-    pred_tensor = outputs[model.main_class_predictions_key]
-    final_logits = outputs[model.final_logits_key]
-    unscaled_logits = outputs[model.unscaled_logits_key]
-
-    if FLAGS.use_patch:
-        stats_dir = os.path.join(eval_dir, "stats.patch")
-    else:
-        stats_dir = os.path.join(eval_dir, "stats")
+    stats_dir = os.path.join(eval_dir, "stats")
     class_mean_file = os.path.join(stats_dir, "class_mean.npz")
     class_cov_file = os.path.join(stats_dir, "class_cov_inv.npz")
 
@@ -414,10 +401,10 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     #mean = np.reshape(mean, [-1] + mean_dims)
     #var_inv = np.reshape(var_inv, [-1] + var_dims)
-    with tf.device("gpu:1"):
-        dist_class, full_dist, min_dist, mean_p, var_inv_p, dbg  = process_logits(final_logits, mean, var_inv, depth, pred_tensor.get_shape().as_list(), num_classes, global_cov, global_mean)
-        dist_colour = _map_to_colored_labels(dist_class, pred_tensor.get_shape().as_list(), label_color_map)
-        pred_colour = _map_to_colored_labels(pred_tensor, pred_tensor.get_shape().as_list(), label_color_map)
+    #with tf.device("gpu:1"):
+    dist_class, full_dist, min_dist, mean_p, var_inv_p, dbg  = process_logits(final_logits, mean, var_inv, depth, annot_tensor.shape.as_list(), num_classes, global_cov, global_mean)
+    dist_colour = _map_to_colored_labels(dist_class, pred_tensor.shape.as_list(), label_color_map)
+    pred_colour = _map_to_colored_labels(pred_tensor, pred_tensor.shape.as_list(), label_color_map)
 
     if do_ood:
         dist_class = tf.expand_dims(pred_to_ood(min_dist, thresh),-1)
@@ -425,18 +412,18 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         pred_tensor = tf.ones_like(pred_tensor)
 
     with tf.variable_scope("PredIou"):
-        pred_miou, pred_conf_mat, pred_update = get_miou(annot_pl, pred_tensor, num_classes, ignore_label, do_ood)
+        pred_miou, pred_conf_mat, pred_update = get_miou(annot_tensor, pred_tensor, num_classes, ignore_label, do_ood)
     with tf.variable_scope("DistIou"):
-        dist_miou, dist_conf_mat, dist_update = get_miou(annot_pl, dist_class, num_classes, ignore_label, do_ood)
+        dist_miou, dist_conf_mat, dist_update = get_miou(annot_tensor, dist_class, num_classes, ignore_label, do_ood)
 
     iou_update = tf.group([pred_update, dist_update])
 
     mean = np.reshape(mean, mean_p.get_shape().as_list())
     var_inv = np.reshape(var_inv, var_inv_p.get_shape().as_list())
 
-    input_fetch = [input_name, input_tensor, annot_tensor]
+    #input_fetch = [input_name, input_tensor, annot_tensor]
 
-    fetch = [pred_tensor, pred_colour, dist_colour, dist_class, full_dist, min_dist, iou_update, final_logits, unscaled_logits]
+    fetch = [pred_tensor, pred_colour, dist_colour, dist_class, full_dist, min_dist, iou_update, final_logits, unscaled_logits, input_name]
 
     # Add checkpointing nodes to correct collection
     # if GRADIENT_CHECKPOINTS is not None:
@@ -449,22 +436,24 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     #         node = graph.get_tensor_by_name(curr_tensor_name)
     #         tf.add_to_collection('checkpoints', node)
     
-    grads = tf.gradients(min_dist, placeholder_tensor)
+    # grads = tf.gradients(min_dist, placeholder_tensor)
     epsilon = 0.0
-    if epsilon > 0.0:
-        adv_img = placeholder_tensor - epsilon*tf.sign(grads)
-    else:
-        adv_img = tf.expand_dims(placeholder_tensor, 0)
+
+    # if epsilon > 0.0:
+    #     adv_img = placeholder_tensor - epsilon*tf.sign(grads)
+    # else:
+    #     adv_img = tf.expand_dims(placeholder_tensor, 0)
 
     num_step = num_images // batch
     dump_dir += "_" + str(epsilon)
     tf.gfile.MakeDirs(dump_dir)
 
     with tf.Session() as sess:
-        sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
-        tf.train.start_queue_runners(sess)
-        saver = tf.train.Saver(tf.global_variables())
-        saver.restore(sess, trained_checkpoint_prefix)
+        sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()],
+                    feed_dict={mean_p: mean, var_inv_p: var_inv})
+        #tf.train.start_queue_runners(sess)
+        #saver = tf.train.Saver(tf.global_variables())
+        #saver.restore(sess, trained_checkpoint_prefix)
 
         if FLAGS.train_kernel:
             kimg_pl, kedges_pl, kloss, ktrain_step, kfilter = kernel_model((1, 1024, 2048, 1))
@@ -475,34 +464,30 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         for idx in range(num_step):
 
             start_time = timeit.default_timer()
+            
 
-            inputs = sess.run(input_fetch)
+            # adv_img_out = sess.run(adv_img, feed_dict={mean_p: mean, var_inv_p: var_inv,
+            #                 placeholder_tensor: img_raw, annot_pl: annot_raw})
+            # adv_img_out = adv_img_out[0]
 
-            annot_raw = inputs[2]
-            img_raw = inputs[1]
-            image_path = inputs[0][0].decode("utf-8")
+            # res, dbg_v = sess.run([fetch, dbg], feed_dict={mean_p: mean, var_inv_p: var_inv,
+            #                 placeholder_tensor: adv_img_out, annot_pl: annot_raw})
+            try:
+                res, dbg_v = sess.run([fetch, dbg]) #, feed_dict={mean_p: mean, var_inv_p: var_inv})
+            except tf.errors.DataLossError:
+                print("caught dataloss")
+                break
+
+            image_path = res[9][0].decode("utf-8")
             filename = os.path.basename(image_path)
             dump_filename = os.path.join(dump_dir, filename)
             if os.path.exists(dump_filename):
                 print("skipping", dump_filename)
                 continue
 
-            adv_img_out = sess.run(adv_img, feed_dict={mean_p: mean, var_inv_p: var_inv,
-                            placeholder_tensor: img_raw, annot_pl: annot_raw})
-            adv_img_out = adv_img_out[0]
-
-            res, dbg_v = sess.run([fetch, dbg], feed_dict={mean_p: mean, var_inv_p: var_inv,
-                            placeholder_tensor: adv_img_out, annot_pl: annot_raw})
-
             pred_miou_v, dist_miou_v = sess.run([pred_miou, dist_miou])
             #import pdb; pdb.set_trace()
-            elapsed = timeit.default_timer() - start_time
-            end = "\r"
-            if idx % 50 == 0:
-                #every now and then do regular print
-                end = "\n"
-            print('{0:.4f} iter: {1}, pred iou: {2:.6f}, dist iou: {3:.6f}'.format(elapsed, idx+1, pred_miou_v, dist_miou_v))
-
+            
             if FLAGS.train_kernel:
                 predictions = res[0]
                 min_dist_out = res[5][0]
@@ -558,7 +543,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 cv2.imwrite(save_location, prediction_colour)
                 cv2.imwrite(min_filename, min_dist_v)
                 cv2.imwrite(dist_filename, dist_out)
-                np.savez(dump_filename, {"full": full_dist_out, "unscaled_logits": unscaled_logits_out})
+                np.savez(dump_filename, {"full": full_dist_out})
             
             if FLAGS.debug:
                 dist_out = res[2][0].astype(np.uint8)
@@ -598,6 +583,13 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                         print(thresh, "  ", grain)
                     elif key == 112: #p
                         import pdb; pdb.set_trace()
+        
+            elapsed = timeit.default_timer() - start_time
+            end = "\r"
+            if idx % 50 == 0:
+                #every now and then do regular print
+                end = "\n"
+            print('{0:.4f} iter: {1}, pred iou: {2:.6f}, dist iou: {3:.6f}'.format(elapsed, idx+1, pred_miou_v, dist_miou_v), end=end)
         print('{0:.4f} iter: {1}, pred iou: {2:.6f}, dist iou: {3:.6f}'.format(elapsed, idx+1, pred_miou_v, dist_miou_v))
 
 
@@ -617,6 +609,7 @@ def main(_):
     min_dir = os.path.join(eval_dir, "min" + suff)
     hist_dir = os.path.join(eval_dir, "hist" + suff)
     dump_dir = os.path.join(eval_dir, "dump" + suff)
+    feats_dir = os.path.join(eval_dir, "feats")
 
     tf.gfile.MakeDirs(output_directory)
     tf.gfile.MakeDirs(min_dir)
@@ -643,22 +636,24 @@ def main(_):
     label_map = (CITYSCAPES_LABEL_IDS
         if FLAGS.label_ids else CITYSCAPES_LABEL_COLORS)
 
-    num_classes, segmentation_model = model_builder.build(
-        pipeline_config.model, is_training=False)
+    # num_classes, segmentation_model = model_builder.build(
+    #     pipeline_config.model, is_training=False)
+
+    batch = 1
 
     if FLAGS.do_ood:
+        dataset_filter = os.path.join(feats_dir, "feats_ood.record")
         input_reader = pipeline_config.ood_eval_input_reader
     else:
+        dataset_filter = os.path.join(feats_dir, "feats_eval.record")
         input_reader = pipeline_config.eval_input_reader
-        
-    input_reader.shuffle = True
-    input_reader.num_epochs = 1
-    input_dict = dataset_builder.build(input_reader)
+    
+    dataset = feature_reader.get_feature_dataset(dataset_filter, batch)
 
     ignore_label = pipeline_config.ood_config.ignore_label
+    num_classes = pipeline_config.model.pspnet.num_classes
 
-    run_inference_graph(segmentation_model, FLAGS.trained_checkpoint,
-                        input_dict, input_reader.num_examples, ignore_label, input_shape, pad_to_shape,
+    run_inference_graph(dataset, batch, input_reader.num_examples, ignore_label, input_shape, pad_to_shape,
                         label_map, output_directory, num_classes, eval_dir, min_dir, dist_dir, hist_dir,
                         dump_dir)
 
