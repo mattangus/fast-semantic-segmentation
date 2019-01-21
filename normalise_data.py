@@ -1,7 +1,14 @@
 import numpy as np
 import glob
+import feature_reader
+import argparse
 
-files = glob.glob("eval_logs/mobile_dim_dist2/dump_LG/*.npz")
+parser = argparse.ArgumentParser()
+parser.add_argument("--eval_dir", "-e", type=str, required=True)
+
+args = parser.parse_args()
+
+files = glob.glob(os.path.join(args.eval_dir, "*.npz"))
 
 means = []
 
