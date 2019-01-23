@@ -263,10 +263,10 @@ def get_miou(labels,
         for v in ne:
             neg_validity_mask = tf.logical_and(neg_validity_mask, v)
 
-    if do_ood:
-        #0 = in distribution, 1 = OOD
-        labels = tf.to_float(labels >= num_classes)
-        num_classes = 2
+    #if do_ood:
+    #0 = in distribution, 1 = OOD
+    labels = tf.to_float(labels >= num_classes)
+    num_classes = 2
 
     eval_labels = tf.where(neg_validity_mask, labels,
                             tf.zeros_like(labels))
@@ -401,353 +401,6 @@ class ParallelWriter(object):
     def size(self):
         return self.write_queue.qsize()
 
-def test_plots():
-
-    roc = np.array([[1.00000000e+00, 1.00000000e+00],
-            [9.99730647e-01, 9.99982417e-01],
-            [9.94876206e-01, 9.99582291e-01],
-            [9.81842160e-01, 9.98318374e-01],
-            [9.67273355e-01, 9.96138334e-01],
-            [9.52027500e-01, 9.93106306e-01],
-            [9.37001586e-01, 9.89393651e-01],
-            [9.21947718e-01, 9.85207677e-01],
-            [9.07574892e-01, 9.80682254e-01],
-            [8.93587351e-01, 9.75841105e-01],
-            [8.79937112e-01, 9.70731556e-01],
-            [8.66688251e-01, 9.65414882e-01],
-            [8.54003191e-01, 9.59880292e-01],
-            [8.41977835e-01, 9.54170406e-01],
-            [8.30495059e-01, 9.48326945e-01],
-            [8.19567621e-01, 9.42362726e-01],
-            [8.09156775e-01, 9.36303735e-01],
-            [7.99279988e-01, 9.30162013e-01],
-            [7.89579153e-01, 9.23935354e-01],
-            [7.80060232e-01, 9.17634249e-01],
-            [7.70812035e-01, 9.11273420e-01],
-            [7.61865497e-01, 9.04858947e-01],
-            [7.53329575e-01, 8.98397624e-01],
-            [7.44969010e-01, 8.91873956e-01],
-            [7.36932576e-01, 8.85304689e-01],
-            [7.29110479e-01, 8.78711700e-01],
-            [7.21481681e-01, 8.72088909e-01],
-            [7.14007199e-01, 8.65452766e-01],
-            [7.06636906e-01, 8.58799040e-01],
-            [6.99405611e-01, 8.52133214e-01],
-            [6.92210138e-01, 8.45446289e-01],
-            [6.85111225e-01, 8.38737369e-01],
-            [6.78080261e-01, 8.32002521e-01],
-            [6.71153605e-01, 8.25239956e-01],
-            [6.64341927e-01, 8.18472981e-01],
-            [6.57568514e-01, 8.11720669e-01],
-            [6.50788188e-01, 8.04970801e-01],
-            [6.43953919e-01, 7.98203707e-01],
-            [6.37211740e-01, 7.91427314e-01],
-            [6.30477905e-01, 7.84641445e-01],
-            [6.23719335e-01, 7.77859509e-01],
-            [6.16967261e-01, 7.71067142e-01],
-            [6.10186338e-01, 7.64274657e-01],
-            [6.03416741e-01, 7.57489741e-01],
-            [5.96632242e-01, 7.50704408e-01],
-            [5.89943886e-01, 7.43928432e-01],
-            [5.83312809e-01, 7.37166345e-01],
-            [5.76796353e-01, 7.30410516e-01],
-            [5.70341766e-01, 7.23669112e-01],
-            [5.63902020e-01, 7.16944993e-01],
-            [5.57586908e-01, 7.10230887e-01],
-            [5.51238954e-01, 7.03514159e-01],
-            [5.44951975e-01, 6.96808398e-01],
-            [5.38658082e-01, 6.90124214e-01],
-            [5.32423377e-01, 6.83444679e-01],
-            [5.26202261e-01, 6.76771820e-01],
-            [5.19939601e-01, 6.70112848e-01],
-            [5.13687611e-01, 6.63471162e-01],
-            [5.07477045e-01, 6.56837285e-01],
-            [5.01191556e-01, 6.50208414e-01],
-            [4.95000362e-01, 6.43584311e-01],
-            [4.88943160e-01, 6.36973321e-01],
-            [4.82895225e-01, 6.30383193e-01],
-            [4.76925194e-01, 6.23804390e-01],
-            [4.70998168e-01, 6.17240965e-01],
-            [4.65073228e-01, 6.10697031e-01],
-            [4.59201247e-01, 6.04173720e-01],
-            [4.53404814e-01, 5.97655654e-01],
-            [4.47684556e-01, 5.91144443e-01],
-            [4.42007422e-01, 5.84649265e-01],
-            [4.36354190e-01, 5.78169286e-01],
-            [4.30746436e-01, 5.71699619e-01],
-            [4.25151348e-01, 5.65246165e-01],
-            [4.19662595e-01, 5.58810651e-01],
-            [4.14193749e-01, 5.52390635e-01],
-            [4.08788264e-01, 5.45987844e-01],
-            [4.03442234e-01, 5.39591551e-01],
-            [3.98151368e-01, 5.33209026e-01],
-            [3.92908901e-01, 5.26835918e-01],
-            [3.87678772e-01, 5.20470917e-01],
-            [3.82369399e-01, 5.14117599e-01],
-            [3.77049208e-01, 5.07775784e-01],
-            [3.71800512e-01, 5.01443207e-01],
-            [3.66613626e-01, 4.95126724e-01],
-            [3.61497670e-01, 4.88822222e-01],
-            [3.56389672e-01, 4.82524484e-01],
-            [3.51276904e-01, 4.76240754e-01],
-            [3.46181720e-01, 4.69960690e-01],
-            [3.41084868e-01, 4.63688046e-01],
-            [3.36015493e-01, 4.57422644e-01],
-            [3.30996454e-01, 4.51161057e-01],
-            [3.25978607e-01, 4.44914937e-01],
-            [3.21016163e-01, 4.38679814e-01],
-            [3.16042304e-01, 4.32451218e-01],
-            [3.11168045e-01, 4.26240534e-01],
-            [3.06305617e-01, 4.20052409e-01],
-            [3.01481813e-01, 4.13884312e-01],
-            [2.96617270e-01, 4.07734662e-01],
-            [2.91754812e-01, 4.01603311e-01],
-            [2.86887467e-01, 3.95492852e-01],
-            [2.82026559e-01, 3.89405012e-01],
-            [2.77146071e-01, 3.83346111e-01],
-            [2.72186399e-01, 3.77309889e-01],
-            [2.67204702e-01, 3.71286362e-01],
-            [2.62249261e-01, 3.65282148e-01],
-            [2.57242411e-01, 3.59304547e-01],
-            [2.52223998e-01, 3.53346407e-01],
-            [2.47162938e-01, 3.47405821e-01],
-            [2.42074415e-01, 3.41487288e-01],
-            [2.36979976e-01, 3.35593045e-01],
-            [2.31859148e-01, 3.29720885e-01],
-            [2.26751402e-01, 3.23873043e-01],
-            [2.21698001e-01, 3.18043441e-01],
-            [2.16681123e-01, 3.12239140e-01],
-            [2.11661488e-01, 3.06462109e-01],
-            [2.06678718e-01, 3.00711453e-01],
-            [2.01760679e-01, 2.94987410e-01],
-            [1.96904570e-01, 2.89294511e-01],
-            [1.92118064e-01, 2.83634722e-01],
-            [1.87350228e-01, 2.78006196e-01],
-            [1.82543188e-01, 2.72406906e-01],
-            [1.77764997e-01, 2.66839921e-01],
-            [1.72968492e-01, 2.61302888e-01],
-            [1.68212458e-01, 2.55788505e-01],
-            [1.63464785e-01, 2.50313848e-01],
-            [1.58751786e-01, 2.44866446e-01],
-            [1.54054314e-01, 2.39460230e-01],
-            [1.49392948e-01, 2.34081998e-01],
-            [1.44828722e-01, 2.28730425e-01],
-            [1.40307248e-01, 2.23413154e-01],
-            [1.35919467e-01, 2.18120441e-01],
-            [1.31604984e-01, 2.12855667e-01],
-            [1.27370209e-01, 2.07620710e-01],
-            [1.23260655e-01, 2.02421814e-01],
-            [1.19232334e-01, 1.97251439e-01],
-            [1.15235850e-01, 1.92109033e-01],
-            [1.11350313e-01, 1.86996996e-01],
-            [1.07474521e-01, 1.81917012e-01],
-            [1.03634462e-01, 1.76852956e-01],
-            [9.98632982e-02, 1.71792969e-01],
-            [9.60825235e-02, 1.66745961e-01],
-            [9.23204497e-02, 1.61717564e-01],
-            [8.86249617e-02, 1.56701937e-01],
-            [8.49682912e-02, 1.51712269e-01],
-            [8.13467801e-02, 1.46741152e-01],
-            [7.77951404e-02, 1.41778648e-01],
-            [7.42644966e-02, 1.36829153e-01],
-            [7.07003400e-02, 1.31885067e-01],
-            [6.72299266e-02, 1.26951024e-01],
-            [6.38521165e-02, 1.22017264e-01],
-            [6.05758727e-02, 1.17083624e-01],
-            [5.74030355e-02, 1.12140767e-01],
-            [5.42494394e-02, 1.07188627e-01],
-            [5.10804802e-02, 1.02220289e-01],
-            [4.78233323e-02, 9.72505435e-02],
-            [4.43602204e-02, 9.22581926e-02],
-            [4.08225767e-02, 8.72264951e-02],
-            [3.71032283e-02, 8.21353123e-02],
-            [3.28979082e-02, 7.69890621e-02],
-            [2.82242224e-02, 7.17549175e-02],
-            [2.32518837e-02, 6.64313212e-02],
-            [1.84753891e-02, 6.09845743e-02],
-            [1.37845017e-02, 5.53839058e-02],
-            [9.79621243e-03, 4.95977700e-02],
-            [6.74532168e-03, 4.35892716e-02],
-            [4.38799709e-03, 3.72859016e-02],
-            [2.80453661e-03, 3.04889623e-02],
-            [1.48203364e-03, 2.28438079e-02],
-            [3.75620206e-04, 1.33362478e-02],
-            [0.00000000e+00, 3.61221700e-16]])
-    pr = np.array([[1.00000000e+00, 9.85926867e-01],
-        [9.99982417e-01, 9.85930324e-01],
-        [9.99582291e-01, 9.85992193e-01],
-        [9.98318374e-01, 9.86155927e-01],
-        [9.96138334e-01, 9.86329019e-01],
-        [9.93106306e-01, 9.86501098e-01],
-        [9.89393651e-01, 9.86662090e-01],
-        [9.85207677e-01, 9.86818552e-01],
-        [9.80682254e-01, 9.86962259e-01],
-        [9.75841105e-01, 9.87097740e-01],
-        [9.70731556e-01, 9.87226367e-01],
-        [9.65414882e-01, 9.87347841e-01],
-        [9.59880292e-01, 9.87459719e-01],
-        [9.54170406e-01, 9.87561047e-01],
-        [9.48326945e-01, 9.87653852e-01],
-        [9.42362726e-01, 9.87738132e-01],
-        [9.36303735e-01, 9.87814665e-01],
-        [9.30162013e-01, 9.87883091e-01],
-        [9.23935354e-01, 9.87948656e-01],
-        [9.17634249e-01, 9.88011420e-01],
-        [9.11273420e-01, 9.88070190e-01],
-        [9.04858947e-01, 9.88124430e-01],
-        [8.98397624e-01, 9.88172472e-01],
-        [8.91873956e-01, 9.88217592e-01],
-        [8.85304689e-01, 9.88257766e-01],
-        [8.78711700e-01, 9.88294721e-01],
-        [8.72088909e-01, 9.88328934e-01],
-        [8.65452766e-01, 9.88360822e-01],
-        [8.58799040e-01, 9.88391399e-01],
-        [8.52133214e-01, 9.88419950e-01],
-        [8.45446289e-01, 9.88448143e-01],
-        [8.38737369e-01, 9.88474846e-01],
-        [8.32002521e-01, 9.88500476e-01],
-        [8.25239956e-01, 9.88524377e-01],
-        [8.18472981e-01, 9.88546729e-01],
-        [8.11720669e-01, 9.88568842e-01],
-        [8.04970801e-01, 9.88591671e-01],
-        [7.98203707e-01, 9.88615513e-01],
-        [7.91427314e-01, 9.88637924e-01],
-        [7.84641445e-01, 9.88660574e-01],
-        [7.77859509e-01, 9.88683999e-01],
-        [7.71067142e-01, 9.88707662e-01],
-        [7.64274657e-01, 9.88732219e-01],
-        [7.57489741e-01, 9.88757133e-01],
-        [7.50704408e-01, 9.88782763e-01],
-        [7.43928432e-01, 9.88807201e-01],
-        [7.37166345e-01, 9.88831222e-01],
-        [7.30410516e-01, 9.88853574e-01],
-        [7.23669112e-01, 9.88875449e-01],
-        [7.16944993e-01, 9.88897622e-01],
-        [7.10230887e-01, 9.88918006e-01],
-        [7.03514159e-01, 9.88939226e-01],
-        [6.96808398e-01, 9.88959968e-01],
-        [6.90124214e-01, 9.88981545e-01],
-        [6.83444679e-01, 9.89002407e-01],
-        [6.76771820e-01, 9.89023507e-01],
-        [6.70112848e-01, 9.89046097e-01],
-        [6.63471162e-01, 9.89069223e-01],
-        [6.56837285e-01, 9.89092052e-01],
-        [6.50208414e-01, 9.89117086e-01],
-        [6.43584311e-01, 9.89140570e-01],
-        [6.36973321e-01, 9.89161909e-01],
-        [6.30383193e-01, 9.89183843e-01],
-        [6.23804390e-01, 9.89204705e-01],
-        [6.17240965e-01, 9.89225268e-01],
-        [6.10697031e-01, 9.89246547e-01],
-        [6.04173720e-01, 9.89267468e-01],
-        [5.97655654e-01, 9.89287198e-01],
-        [5.91144443e-01, 9.89305556e-01],
-        [5.84649265e-01, 9.89323735e-01],
-        [5.78169286e-01, 9.89341915e-01],
-        [5.71699619e-01, 9.89359736e-01],
-        [5.65246165e-01, 9.89377797e-01],
-        [5.58810651e-01, 9.89393950e-01],
-        [5.52390635e-01, 9.89410400e-01],
-        [5.45987844e-01, 9.89425838e-01],
-        [5.39591551e-01, 9.89440262e-01],
-        [5.33209026e-01, 9.89453852e-01],
-        [5.26835918e-01, 9.89466727e-01],
-        [5.20470917e-01, 9.89479661e-01],
-        [5.14117599e-01, 9.89495337e-01],
-        [5.07775784e-01, 9.89511967e-01],
-        [5.01443207e-01, 9.89527166e-01],
-        [4.95126724e-01, 9.89541471e-01],
-        [4.88822222e-01, 9.89554226e-01],
-        [4.82524484e-01, 9.89567280e-01],
-        [4.76240754e-01, 9.89581108e-01],
-        [4.69960690e-01, 9.89594877e-01],
-        [4.63688046e-01, 9.89609241e-01],
-        [4.57422644e-01, 9.89623308e-01],
-        [4.51161057e-01, 9.89636302e-01],
-        [4.44914937e-01, 9.89649951e-01],
-        [4.38679814e-01, 9.89662528e-01],
-        [4.32451218e-01, 9.89675999e-01],
-        [4.26240534e-01, 9.89687026e-01],
-        [4.20052409e-01, 9.89698470e-01],
-        [4.13884312e-01, 9.89709496e-01],
-        [4.07734662e-01, 9.89722729e-01],
-        [4.01603311e-01, 9.89736736e-01],
-        [3.95492852e-01, 9.89751756e-01],
-        [3.89405012e-01, 9.89767790e-01],
-        [3.83346111e-01, 9.89785790e-01],
-        [3.77309889e-01, 9.89807844e-01],
-        [3.71286362e-01, 9.89831805e-01],
-        [3.65282148e-01, 9.89856124e-01],
-        [3.59304547e-01, 9.89883959e-01],
-        [3.53346407e-01, 9.89913762e-01],
-        [3.47405821e-01, 9.89946783e-01],
-        [3.41487288e-01, 9.89982724e-01],
-        [3.35593045e-01, 9.90020931e-01],
-        [3.29720885e-01, 9.90062296e-01],
-        [3.23873043e-01, 9.90105271e-01],
-        [3.18043441e-01, 9.90148008e-01],
-        [3.12239140e-01, 9.90191579e-01],
-        [3.06462109e-01, 9.90237713e-01],
-        [3.00711453e-01, 9.90284801e-01],
-        [2.94987410e-01, 9.90331411e-01],
-        [2.89294511e-01, 9.90378082e-01],
-        [2.83634722e-01, 9.90424156e-01],
-        [2.78006196e-01, 9.90472257e-01],
-        [2.72406906e-01, 9.90525424e-01],
-        [2.66839921e-01, 9.90580380e-01],
-        [2.61302888e-01, 9.90639806e-01],
-        [2.55788505e-01, 9.90700305e-01],
-        [2.50313848e-01, 9.90764618e-01],
-        [2.44866446e-01, 9.90830719e-01],
-        [2.39460230e-01, 9.90900517e-01],
-        [2.34081998e-01, 9.90972400e-01],
-        [2.28730425e-01, 9.91042793e-01],
-        [2.23413154e-01, 9.91115272e-01],
-        [2.18120441e-01, 9.91183698e-01],
-        [2.12855667e-01, 9.91251767e-01],
-        [2.07620710e-01, 9.91319239e-01],
-        [2.02421814e-01, 9.91382957e-01],
-        [1.97251439e-01, 9.91445661e-01],
-        [1.92109033e-01, 9.91510451e-01],
-        [1.86996996e-01, 9.91571903e-01],
-        [1.81917012e-01, 9.91637528e-01],
-        [1.76852956e-01, 9.91704941e-01],
-        [1.71792969e-01, 9.91770744e-01],
-        [1.66745961e-01, 9.91842091e-01],
-        [1.61717564e-01, 9.91917193e-01],
-        [1.56701937e-01, 9.91991758e-01],
-        [1.51712269e-01, 9.92069066e-01],
-        [1.46741152e-01, 9.92149234e-01],
-        [1.41778648e-01, 9.92228568e-01],
-        [1.36829153e-01, 9.92312312e-01],
-        [1.31885067e-01, 9.92406130e-01],
-        [1.26951024e-01, 9.92497504e-01],
-        [1.22017264e-01, 9.92585778e-01],
-        [1.17083624e-01, 9.92669106e-01],
-        [1.12140767e-01, 9.92746294e-01],
-        [1.07188627e-01, 9.92827594e-01],
-        [1.02220289e-01, 9.92917657e-01],
-        [9.72505435e-02, 9.93029594e-01],
-        [9.22581926e-02, 9.93183434e-01],
-        [8.72264951e-02, 9.93363976e-01],
-        [8.21353123e-02, 9.93593216e-01],
-        [7.69890621e-02, 9.93937552e-01],
-        [7.17549175e-02, 9.94416773e-01],
-        [6.64313212e-02, 9.95028734e-01],
-        [6.09845743e-02, 9.95694220e-01],
-        [5.53839058e-02, 9.96459961e-01],
-        [4.95977700e-02, 9.97188628e-01],
-        [4.35892716e-02, 9.97796059e-01],
-        [3.72859016e-02, 9.98323023e-01],
-        [3.04889623e-02, 9.98688698e-01],
-        [2.28438079e-02, 9.99074817e-01],
-        [1.33362478e-02, 9.99598086e-01],
-        [3.61221700e-16, 1.00000000e+00]])
-    
-    make_plots(roc, pr, roc.shape[0])
-    import sys
-    sys.exit(0)
-
 def make_plots(roc, pr, num_thresholds):
     eps = 1e-7
     #from http://www.medicalbiostatistics.com/roccurve.pdf page 6
@@ -778,7 +431,7 @@ def make_plots(roc, pr, num_thresholds):
     plt.xlim((min_v, max_v))
     plt.title("PR")
 
-    plt.show()
+    #plt.show()
 
     print("ROCpoints:", repr(roc))
     print("PRpoints:", repr(pr))
@@ -794,14 +447,13 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     epsilon = FLAGS.epsilon
     dump_dir += "_" + str(epsilon)
     #from normalise_data.py
-    norms = np.load(os.path.join(dump_dir, "normalisation.npy")).item()
-    mean_value = norms["mean"]
-    std_value = norms["std"]
-    # mean_value = 508.7571
-    # std_value = 77.60572284853058
+    # norms = np.load(os.path.join(dump_dir, "normalisation.npy")).item()
+    # mean_value = norms["mean"]
+    # std_value = norms["std"]
+    mean_value = 508.7571
+    std_value = 77.60572284853058
     if FLAGS.max_softmax:
-        thresh = 0.07100591715976332 #dim dist from sun train
-        #thresh = 0.0650887573964497 #dim from sun train
+        thresh = 0.0650887573964497 #dim from sun train
     else:
         thresh = 0.37583892617449666 #dim from sun train
     effective_shape = [batch] + input_shape
@@ -825,10 +477,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     final_logits = outputs[model.final_logits_key]
     unscaled_logits = outputs[model.unscaled_logits_key]
 
-    if FLAGS.use_patch:
-        stats_dir = os.path.join(eval_dir, "stats.patch")
-    else:
-        stats_dir = os.path.join(eval_dir, "stats")
+    stats_dir = os.path.join(eval_dir, "stats")
     class_mean_file = os.path.join(stats_dir, "class_mean.npz")
     class_cov_file = os.path.join(stats_dir, "class_cov_inv.npz")
 
@@ -854,39 +503,42 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     #mean = np.reshape(mean, [-1] + mean_dims)
     #var_inv = np.reshape(var_inv, [-1] + var_dims)
     with tf.device("gpu:1"):
+        not_correct = tf.to_float(tf.not_equal(annot_pl, tf.to_float(pred_tensor)))
         dist_class, img_dist, full_dist, min_dist, mean_p, var_inv_p, vars_noload, dbg  = process_logits(final_logits, mean, var_inv, depth, pred_tensor.get_shape().as_list(), num_classes, global_cov, global_mean)
         dist_colour = _map_to_colored_labels(dist_class, pred_tensor.get_shape().as_list(), label_color_map)
         pred_colour = _map_to_colored_labels(pred_tensor, pred_tensor.get_shape().as_list(), label_color_map)
 
-        if do_ood:
-            if FLAGS.max_softmax:
-                interp_logits = tf.image.resize_bilinear(unscaled_logits, pred_tensor.shape.as_list()[1:3])
-                dist_pred = 1.0 - tf.reduce_max(tf.nn.softmax(interp_logits),-1, keepdims=True)
-                dist_class = tf.to_float(dist_pred >= thresh)
-            else:
-                #dist_pred = tf.reduce_min(tf.nn.softmax(full_dist), -1, keepdims=True)
-                dist_pred = tf.expand_dims(pred_to_ood(min_dist, mean_value, std_value, thresh),-1)
-                dist_class = tf.to_float(dist_pred >= thresh)
+        if FLAGS.max_softmax:
+            interp_logits = tf.image.resize_bilinear(unscaled_logits, pred_tensor.shape.as_list()[1:3])
+            dist_pred = 1 - tf.reduce_max(tf.nn.softmax(interp_logits),-1, keepdims=True)
+            dist_class = tf.to_float(dist_pred >= thresh)
+        else:
+            dist_pred = tf.expand_dims(pred_to_ood(min_dist, mean_value, std_value, thresh),-1)
+            dist_class = tf.to_float(dist_pred >= thresh)
             
-            #pred is the baseline of assuming all ood
-            pred_tensor = tf.ones_like(pred_tensor)
+        #pred is the baseline of assuming all ood
+        pred_tensor = tf.ones_like(pred_tensor)
 
-    with tf.device("gpu:0"):
-        with tf.variable_scope("PredIou"):
-            (pred_miou, pred_conf_mat, pred_update), neg_validity_mask = get_miou(annot_pl, pred_tensor, num_classes, ignore_label, do_ood)
+    with tf.device("gpu:1"):
+        # with tf.variable_scope("PredIou"):
+        #     (pred_miou, pred_conf_mat, pred_update), neg_validity_mask = get_miou(not_correct, pred_tensor, num_classes, ignore_label, do_ood)
         with tf.variable_scope("DistIou"):
-            (dist_miou, dist_conf_mat, dist_update), _ = get_miou(annot_pl, dist_class, num_classes, ignore_label, do_ood, neg_validity_mask)
+            (dist_miou, dist_conf_mat, dist_update), neg_validity_mask = get_miou(not_correct, dist_class, num_classes, ignore_label, do_ood)
   
         weights = tf.to_float(neg_validity_mask)
 
         num_thresholds = 200
 
         with tf.variable_scope("Roc"):
-            RocPoints, roc_update = tf.contrib.metrics.streaming_curve_points(annot_pl,dist_pred,weights,num_thresholds,curve='ROC')
+            RocPoints, roc_update = tf.contrib.metrics.streaming_curve_points(not_correct,dist_pred,weights,num_thresholds,curve='ROC')
         with tf.variable_scope("Pr"):
-            PrPoints, pr_update = tf.contrib.metrics.streaming_curve_points(annot_pl,dist_pred,weights,num_thresholds,curve='PR')
+            PrPoints, pr_update = tf.contrib.metrics.streaming_curve_points(not_correct,dist_pred,weights,num_thresholds,curve='PR')
+        
+        dbg = []#[not_correct, dist_pred, dist_class]
 
-    update_op = [pred_update, dist_update, pr_update, roc_update]
+    update_op = [dist_update]
+    if not FLAGS.write_out:
+        update_op += [pr_update, roc_update]
     update_op = tf.group(update_op)
 
     mean = np.reshape(mean, mean_p.get_shape().as_list())
@@ -895,10 +547,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     input_fetch = [input_name, input_tensor, annot_tensor]
 
     fetch = {"update": update_op,
-            "roc": RocPoints,
+        "roc": RocPoints,
         }
-    
-    dbg = [min_dist, dist_pred]
 
     if FLAGS.train_kernel:
         fetch["predictions"] = pred_tensor
@@ -930,7 +580,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         writers = [ParallelWriter(write_queue) for i in range(num_writers)]
 
     config = tf.ConfigProto(allow_soft_placement=True)
-    #config.gpu_options.allow_growth = True
+    config.gpu_options.allow_growth = True
     with tf.Session(config=config) as sess:
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()],
                     {mean_p: mean, var_inv_p: var_inv})
@@ -966,7 +616,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             roc = res["roc"]
             auc = -np.trapz(roc[:,1], roc[:,0])
 
-            pred_miou_v, dist_miou_v = sess.run([pred_miou, dist_miou])
+            dist_miou_v = sess.run([dist_miou])
             #import pdb; pdb.set_trace()
             # if idx % 25 == 0 and idx != 0:
             #     roc = sess.run(RocPoints)
@@ -1083,7 +733,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 qsize = write_queue.qsize()
             else:
                 qsize = 0
-            print('{0:.4f} iter: {1}, pred iou: {2:.6f}, dist iou: {3:.6f}, auc:{4:0.6f}'.format(elapsed, idx+1, pred_miou_v, dist_miou_v, auc))
+            
+            print('{0:.4f} iter: {1}, iou: {2:.6f}, auc: {3:.6f}'.format(elapsed, idx+1, dist_miou_v[0], auc))
 
         if not FLAGS.write_out:
             roc = sess.run(RocPoints)
@@ -1094,7 +745,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         if FLAGS.write_out:
             for w in writers:
                 w.close()
-        print('{0:.4f} iter: {1}, pred iou: {2:.6f}, dist iou: {3:.6f}'.format(elapsed, idx+1, pred_miou_v, dist_miou_v))
+        print('{0:.4f} iter: {1}, iou: {2:.6f}'.format(elapsed, idx+1, dist_miou_v[0]))
 
 
 

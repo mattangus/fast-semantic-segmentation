@@ -67,7 +67,7 @@ flags.DEFINE_boolean('use_pool', False,
 flags.DEFINE_boolean('use_patch', False,
                      'avg pool over spatial dims')
 
-flags.DEFINE_integer("max_iters", None, "limit the number of iterations for large datasets")
+flags.DEFINE_integer("max_iters", 1000000000, "limit the number of iterations for large datasets")
 
 
 def create_input(tensor_dict,

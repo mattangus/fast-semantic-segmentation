@@ -20,7 +20,7 @@ import random
 import colorsys
 
 from protos import pipeline_pb2
-from builders import model_builder, dataset_builder
+from builders import model_builder, thresh_dataset
 from libs.exporter import deploy_segmentation_inference_graph, _map_to_colored_labels
 from libs.constants import CITYSCAPES_LABEL_COLORS, CITYSCAPES_LABEL_IDS, URSA_LABEL_COLORS
 from libs.metrics import mean_iou
@@ -47,9 +47,11 @@ flags.DEFINE_string('thresh_dir', None, 'Path to write outputs images.')
 
 flags.DEFINE_bool("use_mean", False, "use thresh*mean in model")
 
+flags.DEFINE_bool("max_softmax", False, "use max_softmax value in model")
+
 FLAGS = flags.FLAGS
 
-epoch = 3
+epoch = 10
 
 def create_input(tensor_dict,
                 batch_size,
@@ -64,7 +66,7 @@ def create_input(tensor_dict,
         return tensor_dict
 
     tensor_dict = cast_and_reshape(tensor_dict,
-                    dataset_builder._IMAGE_FIELD)
+                    thresh_dataset._IMAGE_FIELD)
 
     batched_tensors = tf.train.batch(tensor_dict,
         batch_size=batch_size, num_threads=batch_queue_threads,
@@ -109,18 +111,22 @@ def get_miou(labels,
 
     return mean_iou(eval_labels, predictions, num_classes, weights=tf.to_float(neg_validity_mask))
 
-def build_model(annot_tensor, ignore_label, num_classes, mean_value, std_value, num_step):
+def build_model(annot_tensor, ignore_label, num_classes, mean_value, std_value, num_step, max_softmax):
     lamb = 0.2
     if FLAGS.use_mean:
         dims = 2
     else:
         dims = 1
-    thresh = tf.get_variable("thresh", shape=(dims,), dtype=tf.float32)
+    #thresh = tf.get_variable("thresh", shape=(dims,), dtype=tf.float32)
+    thresh = tf.get_variable("thresh", initializer=-0.2, dtype=tf.float32)
 
     min_dist_pl = tf.placeholder(tf.float32, annot_tensor.shape.as_list())
 
     #normalise
-    min_dist_norm = (min_dist_pl - mean_value) / std_value
+    if max_softmax:
+        min_dist_norm = min_dist_pl
+    else:
+        min_dist_norm = (min_dist_pl - mean_value) / std_value
 
     neg_validity_mask = get_neg_valid(annot_tensor, ignore_label)
     weights = tf.to_float(neg_validity_mask)
@@ -152,7 +158,7 @@ def build_model(annot_tensor, ignore_label, num_classes, mean_value, std_value, 
 
     global_step = tf.train.get_or_create_global_step()
     lr = tf.train.exponential_decay(0.01,
-        global_step, num_step, 0.01)
+        global_step, num_step, 0.5)
 
     train_step = tf.train.AdamOptimizer(lr).minimize(loss, global_step=global_step)
 
@@ -166,7 +172,7 @@ def build_model(annot_tensor, ignore_label, num_classes, mean_value, std_value, 
         tf.summary.scalar("metrics/thresh_0", thresh[0])
         tf.summary.scalar("metrics/thresh_1", thresh[1])
     else:
-        tf.summary.scalar("metrics/thresh", thresh[0])        
+        tf.summary.scalar("metrics/thresh", thresh)        
     tf.summary.scalar("metrics/loss", loss)
     tf.summary.scalar("metrics/acc", acc)
     tf.summary.scalar("metrics/pct_out", pct_out)
@@ -184,14 +190,14 @@ def get_dumps(image_paths, eval_dir):
     min_dist = []
 
     for path in image_paths:
-        dump_file = os.path.join(eval_dir, os.path.basename(path) + ".npz")
+        dump_file = os.path.join(eval_dir, os.path.basename(path) + ".npy")
         # if dump_file in dist_cache and False:
         #     min_dist.append(dist_cache[dump_file])
         # else:
         if not os.path.exists(dump_file):
             #print("skipping", dump_file)
             return None
-        arr = np.expand_dims(np.load(dump_file)["arr_0"],-1)
+        arr = np.min(np.expand_dims(np.load(dump_file),-1).item()["full"],-1, keepdims=True)
         #dist_cache[dump_file] = arr 
         min_dist.append(arr)
     
@@ -200,32 +206,43 @@ def get_dumps(image_paths, eval_dir):
 def run_inference_graph(input_dict, num_images, ignore_label,
                         num_classes, eval_dir, thresh_dir):
     batch = 18
-    do_ood = True
-    mean_value = 646604.7
-    std_value = np.sqrt(28830410695.369247)
-    window = 30
-    window = np.ones([window])/window
+    max_softmax = FLAGS.max_softmax
+    if max_softmax:
+        mean_value = 0.0
+        std_value = 1.0
+    else:
+        norms = np.load(os.path.join(eval_dir, "normalisation.npy")).item()
+        mean_value = norms["mean"]
+        std_value = norms["std"]
+        print("mean found:", mean_value, "std found:", std_value)
+    
     check_file = os.path.join(thresh_dir, "model.ckpt")
 
-    input_queue = create_input(input_dict, batch, 15, 15, 15)
+    input_queue = create_input(input_dict, batch, 7, 7, 7)
     input_dict = input_queue.dequeue()
 
-    input_tensor = input_dict[dataset_builder._IMAGE_FIELD]
-    annot_tensor = input_dict[dataset_builder._LABEL_FIELD]
-    input_name = input_dict[dataset_builder._IMAGE_NAME_FIELD]
+    input_tensor = input_dict[thresh_dataset._IMAGE_FIELD]
+    annot_tensor = input_dict[thresh_dataset._LABEL_FIELD]
+    input_name = input_dict[thresh_dataset._IMAGE_NAME_FIELD]
+    min_dist = input_dict[thresh_dataset._DIST_FIELD]
+    if max_softmax:
+        min_dist = tf.reduce_max(min_dist, -1, keepdims=True)
+    else:
+        min_dist = tf.reduce_min(min_dist, -1, keepdims=True)
 
     annot_pl = tf.placeholder(tf.float32, annot_tensor.get_shape().as_list())
 
-    input_fetch = [input_name, input_tensor, annot_tensor]
+    input_fetch = [input_name, input_tensor, annot_tensor, min_dist]
 
     num_step = epoch * (num_images // batch)
     print("running for", num_step, "steps")
 
-    temp = build_model(annot_pl, ignore_label, num_classes, mean_value, std_value, num_step)
+    temp = build_model(annot_pl, ignore_label, num_classes, mean_value, std_value, num_step, max_softmax)
     thresh, loss, train_step, min_dist_pl, neg_validity_mask, acc, pct_out, lr, global_step, dbg = temp
 
     saver = tf.train.Saver()
     ckpt = tf.train.latest_checkpoint(thresh_dir)
+    coord = tf.train.Coordinator()
 
     train_summary = tf.summary.FileWriter(thresh_dir)
     merged_summary = tf.summary.merge_all()
@@ -234,28 +251,29 @@ def run_inference_graph(input_dict, num_images, ignore_label,
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
         if ckpt is not None:
             saver.restore(sess, ckpt)
-        tf.train.start_queue_runners(sess)
-
+        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
         start_step = sess.run(global_step)
 
+        print("starting training")
         for idx in range(start_step, num_step):
-
+            
             start_time = timeit.default_timer()
-
+            
             inputs = sess.run(input_fetch)
 
+            min_dist_raw = inputs[3]
             annot_raw = inputs[2]
             img_raw = inputs[1]
             image_paths = inputs[0]
 
-            min_dist = get_dumps([p.decode("utf-8") for p in image_paths], eval_dir)
+            # min_dist = get_dumps([p.decode("utf-8") for p in image_paths], eval_dir)
             
-            if min_dist is None:
-                #print("skipping", dump_file)
-                continue
+            # if min_dist is None:
+            #     #print("skipping", dump_file)
+            #     continue
 
             fetch = [loss, train_step, thresh, acc, pct_out, lr, merged_summary, dbg]
-            cur_loss, _, cur_thresh, cur_acc, num_out, cur_lr, cur_summary, dbg_out = sess.run(fetch, {annot_pl: annot_raw, min_dist_pl: min_dist})
+            cur_loss, _, cur_thresh, cur_acc, num_out, cur_lr, cur_summary, dbg_out = sess.run(fetch, {annot_pl: annot_raw, min_dist_pl: min_dist_raw})
 
             train_summary.add_summary(cur_summary, global_step=idx)
 
@@ -263,12 +281,15 @@ def run_inference_graph(input_dict, num_images, ignore_label,
                 saver.save(sess, check_file, global_step=idx)
             #import pdb; pdb.set_trace()
             elapsed = timeit.default_timer() - start_time
-            end = "\r"
+            end = "\n"
             if idx % 50 == 0:
                 #every now and then do regular print
                 end = "\n"
             print('{0:.4f} iter: {1}, loss: {2:.4f}, acc: {3:.4f}, pct_out: {4:.4f} thresh: {5}, lr: {6}         '
                     .format(elapsed, idx+1, cur_loss, cur_acc, num_out, cur_thresh, cur_lr), end=end)
+        
+        coord.request_stop()
+        coord.join(threads)
 
 
 def main(_):
@@ -286,7 +307,7 @@ def main(_):
     input_reader = pipeline_config.ood_train_input_reader
     input_reader.shuffle = True
     input_reader.num_epochs = epoch
-    input_dict = dataset_builder.build(input_reader)
+    input_dict = thresh_dataset.build(input_reader, eval_dir, FLAGS.max_softmax)
 
     ignore_label = pipeline_config.ood_config.ignore_label
 
