@@ -1,60 +1,39 @@
 #!/bin/bash
-CUDA_VISIBLE_DEVICES=0,1 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.0002 &> remote/eval_logs/resnet_dim_dist2/eps_0.0002.log & 
+echo --config_path "$1"
+echo --eval_dir "$2"
+echo --trained_checkpoint "$3"
+echo output "$2"/mahal_eps_"*"
 
-CUDA_VISIBLE_DEVICES=2,3 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.0004 &> remote/eval_logs/resnet_dim_dist2/eps_0.0004.log & 
+read -r -p "Are you sure? [y/N] " response
+if [[ "$response" =~ ^([yY][eE][sS]|[yY])+$ ]]
+then
+    echo "ok then!"
+else
+    exit
+fi
 
-CUDA_VISIBLE_DEVICES=4,5 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.0006 &> remote/eval_logs/resnet_dim_dist2/eps_0.0006.log & 
+for ITEM in 0.00002,0.00004,0.00006,0.00008 0.00010,0.00012,0.00014,0.00016 0.00018,0.00020,0.00022,0.00024 0.00026,0.00028,0.00030,0.00032 0.00034,0.00036,0.00038,0.00040
+do
 
-CUDA_VISIBLE_DEVICES=6,7 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.0008 &> remote/eval_logs/resnet_dim_dist2/eps_0.0008.log &
+    OLDIFS=$IFS
+    IFS=','
+    read eps1 eps2 eps3 eps4 <<< "${ITEM}"
+    IFS=$OLDIFS
 
-echo "waiting for 0.0002-0.0008"
-wait
-echo "done waiting"
+    echo "CUDA_VISIBLE_DEVICES=0,1 python3 -u error_detect.py --config_path ""$1"" --eval_dir ""$2"" --trained_checkpoint ""$3"" --use_train --global_cov --epsilon ""$eps1"" &> ""$2""/mahal_eps_"$eps1".log &"
+    CUDA_VISIBLE_DEVICES=0,1 python3 -u error_detect.py --config_path "$1" --eval_dir "$2" --trained_checkpoint "$3" --use_train --global_cov --epsilon "$eps1" &> "$2"/mahal_eps_"$eps1".log &
 
-CUDA_VISIBLE_DEVICES=0,1 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.001 &> remote/eval_logs/resnet_dim_dist2/eps_0.001.log & 
+    echo "CUDA_VISIBLE_DEVICES=2,3 python3 -u error_detect.py --config_path ""$1"" --eval_dir ""$2"" --trained_checkpoint ""$3"" --use_train --global_cov --epsilon ""$eps2"" &> ""$2""/mahal_eps_"$eps2".log &"
+    CUDA_VISIBLE_DEVICES=2,3 python3 -u error_detect.py --config_path "$1" --eval_dir "$2" --trained_checkpoint "$3" --use_train --global_cov --epsilon "$eps2" &> "$2"/mahal_eps_"$eps2".log &
 
-CUDA_VISIBLE_DEVICES=2,3 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.0012 &> remote/eval_logs/resnet_dim_dist2/eps_0.0012.log & 
+    echo "CUDA_VISIBLE_DEVICES=4,5 python3 -u error_detect.py --config_path ""$1"" --eval_dir ""$2"" --trained_checkpoint ""$3"" --use_train --global_cov --epsilon ""$eps3"" &> ""$2""/mahal_eps_"$eps3".log &"
+    CUDA_VISIBLE_DEVICES=4,5 python3 -u error_detect.py --config_path "$1" --eval_dir "$2" --trained_checkpoint "$3" --use_train --global_cov --epsilon "$eps3" &> "$2"/mahal_eps_"$eps3".log &
 
-CUDA_VISIBLE_DEVICES=4,5 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.0014 &> remote/eval_logs/resnet_dim_dist2/eps_0.0014.log & 
+    echo "CUDA_VISIBLE_DEVICES=6,7 python3 -u error_detect.py --config_path ""$1"" --eval_dir ""$2"" --trained_checkpoint ""$3"" --use_train --global_cov --epsilon ""$eps4"" &> ""$2""/mahal_eps_"$eps4".log &"
+    CUDA_VISIBLE_DEVICES=6,7 python3 -u error_detect.py --config_path "$1" --eval_dir "$2" --trained_checkpoint "$3" --use_train --global_cov --epsilon "$eps4" &> "$2"/mahal_eps_"$eps4".log &
 
-CUDA_VISIBLE_DEVICES=6,7 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.0016 &> remote/eval_logs/resnet_dim_dist2/eps_0.0016.log &
+    echo "waiting for $eps1 - $eps4"
+    wait
+    echo "done waiting"
 
-echo "waiting for 0.001-0.0016"
-wait
-echo "done waiting"
-
-CUDA_VISIBLE_DEVICES=0,1 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.0018 &> remote/eval_logs/resnet_dim_dist2/eps_0.0018.log & 
-
-CUDA_VISIBLE_DEVICES=2,3 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.002 &> remote/eval_logs/resnet_dim_dist2/eps_0.002.log & 
-
-CUDA_VISIBLE_DEVICES=4,5 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.0022 &> remote/eval_logs/resnet_dim_dist2/eps_0.0022.log & 
-
-CUDA_VISIBLE_DEVICES=6,7 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.0024 &> remote/eval_logs/resnet_dim_dist2/eps_0.0024.log &
-
-echo "waiting for 0.0018-0.0024"
-wait
-echo "done waiting"
-
-CUDA_VISIBLE_DEVICES=0,1 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.0026 &> remote/eval_logs/resnet_dim_dist2/eps_0.0026.log & 
-
-CUDA_VISIBLE_DEVICES=2,3 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.0028 &> remote/eval_logs/resnet_dim_dist2/eps_0.0028.log & 
-
-CUDA_VISIBLE_DEVICES=4,5 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.003 &> remote/eval_logs/resnet_dim_dist2/eps_0.003.log & 
-
-CUDA_VISIBLE_DEVICES=6,7 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.0032 &> remote/eval_logs/resnet_dim_dist2/eps_0.0032.log &
-
-echo "waiting for 0.0026-0.0032"
-wait
-echo "done waiting"
-
-CUDA_VISIBLE_DEVICES=0,1 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.0034 &> remote/eval_logs/resnet_dim_dist2/eps_0.0034.log & 
-
-CUDA_VISIBLE_DEVICES=2,3 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.0036 &> remote/eval_logs/resnet_dim_dist2/eps_0.0036.log & 
-
-CUDA_VISIBLE_DEVICES=4,5 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.0038 &> remote/eval_logs/resnet_dim_dist2/eps_0.0038.log & 
-
-CUDA_VISIBLE_DEVICES=6,7 python3 error_detect.py --config_path configs/pspnet_full_dim_dist.config --eval_dir remote/eval_logs/resnet_dim_dist2/ --trained_checkpoint remote/train_logs/resnet_dim_dist2/model.ckpt-1263 --global_cov --epsilon 0.004 &> remote/eval_logs/resnet_dim_dist2/eps_0.004.log &
-
-echo "waiting for 0.0034-0.004"
-wait
-echo "done waiting"
+done

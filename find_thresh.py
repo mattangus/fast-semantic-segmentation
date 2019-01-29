@@ -45,8 +45,6 @@ flags.DEFINE_string('eval_dir', None, 'Path to write outputs images.')
 
 flags.DEFINE_string('thresh_dir', None, 'Path to write outputs images.')
 
-flags.DEFINE_bool("use_mean", False, "use thresh*mean in model")
-
 flags.DEFINE_bool("max_softmax", False, "use max_softmax value in model")
 
 FLAGS = flags.FLAGS
@@ -103,7 +101,7 @@ def get_miou(labels,
     #0 = in distribution, 1 = OOD
     labels = tf.to_float(labels >= num_classes)
     num_classes = 2
-    
+
     #import pdb; pdb.set_trace()
 
     eval_labels = tf.where(neg_validity_mask, labels,
@@ -113,12 +111,9 @@ def get_miou(labels,
 
 def build_model(annot_tensor, ignore_label, num_classes, mean_value, std_value, num_step, max_softmax):
     lamb = 0.2
-    if FLAGS.use_mean:
-        dims = 2
-    else:
-        dims = 1
     #thresh = tf.get_variable("thresh", shape=(dims,), dtype=tf.float32)
-    thresh = tf.get_variable("thresh", initializer=-0.2, dtype=tf.float32)
+    w = tf.get_variable("W", initializer=1.0, dtype=tf.float32)
+    b = tf.get_variable("b", initializer=0.2, dtype=tf.float32)
 
     min_dist_pl = tf.placeholder(tf.float32, annot_tensor.shape.as_list())
 
@@ -136,25 +131,14 @@ def build_model(annot_tensor, ignore_label, num_classes, mean_value, std_value, 
 
     not_batch = list(range(1,len(min_dist_norm.shape.as_list())))
     mean_dist = tf.reduce_mean(min_dist_norm, not_batch, keepdims=True)
-    
-    if FLAGS.use_mean:
-        use_mean = thresh[0]*mean_dist
-        thresh_value = thresh[1]
-    else:
-        use_mean = 0.0
-        thresh_value = thresh
 
-    print("use_mean:", use_mean)
-
-    logits = (min_dist_norm - use_mean - thresh_value)
+    logits = (min_dist_norm*w + b)
     predictions = tf.to_float(logits >= 0)
 
     pixel_loss = tf.losses.sigmoid_cross_entropy(multi_class_labels=norm_annot,
                                 logits=logits, weights=weights)
 
     loss = tf.reduce_mean(pixel_loss)
-    if FLAGS.use_mean:
-        loss +=  0.1 * tf.norm(thresh)
 
     global_step = tf.train.get_or_create_global_step()
     lr = tf.train.exponential_decay(0.01,
@@ -168,11 +152,8 @@ def build_model(annot_tensor, ignore_label, num_classes, mean_value, std_value, 
     pct_out = tf.reduce_sum(norm_annot*weights)/tf.reduce_sum(weights)
 
     tf.summary.scalar("metrics/lr", lr)
-    if FLAGS.use_mean:
-        tf.summary.scalar("metrics/thresh_0", thresh[0])
-        tf.summary.scalar("metrics/thresh_1", thresh[1])
-    else:
-        tf.summary.scalar("metrics/thresh", thresh)        
+    tf.summary.scalar("metrics/w", w)
+    tf.summary.scalar("metrics/b", b)
     tf.summary.scalar("metrics/loss", loss)
     tf.summary.scalar("metrics/acc", acc)
     tf.summary.scalar("metrics/pct_out", pct_out)
@@ -180,11 +161,11 @@ def build_model(annot_tensor, ignore_label, num_classes, mean_value, std_value, 
     tf.summary.image("images/annot", annot_tensor)
     tf.summary.image("images/min_dist", min_dist_pl)
     tf.summary.image("images/predictions", predictions)
-    
-    return (thresh, loss, train_step, min_dist_pl, neg_validity_mask, acc, pct_out, lr, global_step,
+
+    return (w, b, loss, train_step, min_dist_pl, neg_validity_mask, acc, pct_out, lr, global_step,
             []#[norm_annot, logits, pixel_loss, min_dist_norm, predictions, correct]
             )
-    
+
 def get_dumps(image_paths, eval_dir):
 
     min_dist = []
@@ -198,9 +179,9 @@ def get_dumps(image_paths, eval_dir):
             #print("skipping", dump_file)
             return None
         arr = np.min(np.expand_dims(np.load(dump_file),-1).item()["full"],-1, keepdims=True)
-        #dist_cache[dump_file] = arr 
+        #dist_cache[dump_file] = arr
         min_dist.append(arr)
-    
+
     return np.array(min_dist)
 
 def run_inference_graph(input_dict, num_images, ignore_label,
@@ -215,7 +196,7 @@ def run_inference_graph(input_dict, num_images, ignore_label,
         mean_value = norms["mean"]
         std_value = norms["std"]
         print("mean found:", mean_value, "std found:", std_value)
-    
+
     check_file = os.path.join(thresh_dir, "model.ckpt")
 
     input_queue = create_input(input_dict, batch, 7, 7, 7)
@@ -238,7 +219,7 @@ def run_inference_graph(input_dict, num_images, ignore_label,
     print("running for", num_step, "steps")
 
     temp = build_model(annot_pl, ignore_label, num_classes, mean_value, std_value, num_step, max_softmax)
-    thresh, loss, train_step, min_dist_pl, neg_validity_mask, acc, pct_out, lr, global_step, dbg = temp
+    w, b, loss, train_step, min_dist_pl, neg_validity_mask, acc, pct_out, lr, global_step, dbg = temp
 
     saver = tf.train.Saver()
     ckpt = tf.train.latest_checkpoint(thresh_dir)
@@ -256,9 +237,9 @@ def run_inference_graph(input_dict, num_images, ignore_label,
 
         print("starting training")
         for idx in range(start_step, num_step):
-            
+
             start_time = timeit.default_timer()
-            
+
             inputs = sess.run(input_fetch)
 
             min_dist_raw = inputs[3]
@@ -267,13 +248,13 @@ def run_inference_graph(input_dict, num_images, ignore_label,
             image_paths = inputs[0]
 
             # min_dist = get_dumps([p.decode("utf-8") for p in image_paths], eval_dir)
-            
+
             # if min_dist is None:
             #     #print("skipping", dump_file)
             #     continue
 
-            fetch = [loss, train_step, thresh, acc, pct_out, lr, merged_summary, dbg]
-            cur_loss, _, cur_thresh, cur_acc, num_out, cur_lr, cur_summary, dbg_out = sess.run(fetch, {annot_pl: annot_raw, min_dist_pl: min_dist_raw})
+            fetch = [loss, train_step, w, b, acc, pct_out, lr, merged_summary, dbg]
+            cur_loss, _, cur_w, cur_b, cur_acc, num_out, cur_lr, cur_summary, dbg_out = sess.run(fetch, {annot_pl: annot_raw, min_dist_pl: min_dist_raw})
 
             train_summary.add_summary(cur_summary, global_step=idx)
 
@@ -285,9 +266,9 @@ def run_inference_graph(input_dict, num_images, ignore_label,
             if idx % 50 == 0:
                 #every now and then do regular print
                 end = "\n"
-            print('{0:.4f} iter: {1}, loss: {2:.4f}, acc: {3:.4f}, pct_out: {4:.4f} thresh: {5}, lr: {6}         '
-                    .format(elapsed, idx+1, cur_loss, cur_acc, num_out, cur_thresh, cur_lr), end=end)
-        
+            print('{0:.4f} iter: {1}, loss: {2:.4f}, acc: {3:.4f}, pct_out: {4:.4f} w: {5}, b: {6} lr: {7}         '
+                    .format(elapsed, idx+1, cur_loss, cur_acc, num_out, cur_w, cur_b, cur_lr), end=end)
+
         coord.request_stop()
         coord.join(threads)
 
@@ -297,7 +278,7 @@ def main(_):
 
     thresh_dir = FLAGS.thresh_dir
     tf.gfile.MakeDirs(thresh_dir)
-    
+
     pipeline_config = pipeline_pb2.PipelineConfig()
     with tf.gfile.GFile(FLAGS.config_path, 'r') as f:
         text_format.Merge(f.read(), pipeline_config)

@@ -19,6 +19,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import random
 import colorsys
 from multiprocessing import Process, Queue, Pool
+import sklearn
 
 from protos import pipeline_pb2
 from builders import model_builder, dataset_builder
@@ -65,6 +66,8 @@ flags.DEFINE_boolean('label_ids', False,
                      'Whether the output should be label ids.')
 
 flags.DEFINE_float("epsilon", 0.0, "")
+
+flags.DEFINE_float("t_value", 1.0, "")
 
 flags.DEFINE_boolean('global_cov', False,'')
 
@@ -249,7 +252,15 @@ def pred_to_ood(pred, mean_value, std_value, thresh=None):
         return tf.to_float(pred >= median)
     else:
         min_dist_norm = (pred - mean_value) / std_value
-        return tf.nn.sigmoid(min_dist_norm)
+        return tf.nn.sigmoid(min_dist_norm * 0.13273349404335022 + 0.38076120615005493)
+
+def get_valid(labels, ignore_label):
+    ne = [tf.not_equal(labels, il) for il in ignore_label]
+    neg_validity_mask = ne.pop(0)
+    for v in ne:
+        neg_validity_mask = tf.logical_and(neg_validity_mask, v)
+    
+    return neg_validity_mask
 
 def get_miou(labels,
              predictions,
@@ -258,10 +269,7 @@ def get_miou(labels,
              do_ood,
              neg_validity_mask=None):
     if neg_validity_mask is None:
-        ne = [tf.not_equal(labels, il) for il in ignore_label]
-        neg_validity_mask = ne.pop(0)
-        for v in ne:
-            neg_validity_mask = tf.logical_and(neg_validity_mask, v)
+        neg_validity_mask = get_valid(labels, ignore_label)
 
     #if do_ood:
     #0 = in distribution, 1 = OOD
@@ -363,16 +371,16 @@ def train_kernel(img, edges, sess, img_pl, edges_pl, loss, train_step, filter):
         cur_loss, _ = sess.run([loss, train_step], {img_pl: img, edges_pl: edges})
         print(i,":", cur_loss, end="\r")
         #all_losses.append(cur_loss)
-    
+
     return sess.run(filter)
 
 class ParallelWriter(object):
-    
+
     def __init__(self, write_queue):
         self.write_queue = write_queue
         self.p = Process(target=self.write_thread)
         self.p.start()
-    
+
     def write_thread(self):
         while True:
             item = self.write_queue.get()
@@ -392,12 +400,12 @@ class ParallelWriter(object):
 
     def put(self, idx, filename, data):
         self.write_queue.put((idx,filename,data))
-    
+
     def close(self):
         self.write_queue.put(None)
         self.p.join()
         print("closed writer")
-    
+
     def size(self):
         return self.write_queue.qsize()
 
@@ -414,7 +422,7 @@ def make_plots(roc, pr, num_thresholds):
     optimal_point = roc[optimal]
     min_v = -0.01
     max_v = 1.01
-    
+
     #roc curve
     plt.subplot(1, 2, 1)
     plt.plot(roc[:,0], roc[:,1])
@@ -436,7 +444,6 @@ def make_plots(roc, pr, num_thresholds):
     print("ROCpoints:", repr(roc))
     print("PRpoints:", repr(pr))
 
-
 def run_inference_graph(model, trained_checkpoint_prefix,
                         input_dict, num_images, ignore_label, input_shape, pad_to_shape,
                         label_color_map, output_directory, num_classes, eval_dir,
@@ -445,6 +452,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     batch = 1
     do_ood = FLAGS.do_ood
     epsilon = FLAGS.epsilon
+    #epsilon = np.linspace(0,0.0001,10)
     dump_dir += "_" + str(epsilon)
     #from normalise_data.py
     # norms = np.load(os.path.join(dump_dir, "normalisation.npy")).item()
@@ -477,7 +485,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     final_logits = outputs[model.final_logits_key]
     unscaled_logits = outputs[model.unscaled_logits_key]
 
-    stats_dir = os.path.join(eval_dir, "stats")
+    stats_dir = os.path.join(eval_dir, "stats.dtform")
     class_mean_file = os.path.join(stats_dir, "class_mean.npz")
     class_cov_file = os.path.join(stats_dir, "class_cov_inv.npz")
 
@@ -491,7 +499,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     var_dims = list(var_inv.shape[-2:])
     mean_dims = list(mean.shape[-2:])
     depth = mean_dims[-1]
-    
+
     if global_cov:
         var_brod = np.ones_like(var_inv)
         var_inv = np.sum(var_inv, axis=(0,1,2), keepdims=True)*var_brod
@@ -510,21 +518,22 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
         if FLAGS.max_softmax:
             interp_logits = tf.image.resize_bilinear(unscaled_logits, pred_tensor.shape.as_list()[1:3])
-            dist_pred = 1 - tf.reduce_max(tf.nn.softmax(interp_logits),-1, keepdims=True)
+            dist_pred = 1 - tf.reduce_max(tf.nn.softmax(interp_logits/FLAGS.t_value),-1, keepdims=True)
             dist_class = tf.to_float(dist_pred >= thresh)
         else:
             dist_pred = tf.expand_dims(pred_to_ood(min_dist, mean_value, std_value, thresh),-1)
             dist_class = tf.to_float(dist_pred >= thresh)
-            
+
         #pred is the baseline of assuming all ood
         pred_tensor = tf.ones_like(pred_tensor)
 
     with tf.device("gpu:1"):
+        neg_validity_mask = get_valid(annot_pl, ignore_label)
         # with tf.variable_scope("PredIou"):
-        #     (pred_miou, pred_conf_mat, pred_update), neg_validity_mask = get_miou(not_correct, pred_tensor, num_classes, ignore_label, do_ood)
+        #     (pred_miou, pred_conf_mat, pred_update), _ = get_miou(not_correct, pred_tensor, num_classes, ignore_label, do_ood, neg_validity_mask)
         with tf.variable_scope("DistIou"):
-            (dist_miou, dist_conf_mat, dist_update), neg_validity_mask = get_miou(not_correct, dist_class, num_classes, ignore_label, do_ood)
-  
+            (dist_miou, dist_conf_mat, dist_update), _ = get_miou(not_correct, dist_class, num_classes, ignore_label, do_ood, neg_validity_mask)
+
         weights = tf.to_float(neg_validity_mask)
 
         num_thresholds = 200
@@ -533,8 +542,11 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             RocPoints, roc_update = tf.contrib.metrics.streaming_curve_points(not_correct,dist_pred,weights,num_thresholds,curve='ROC')
         with tf.variable_scope("Pr"):
             PrPoints, pr_update = tf.contrib.metrics.streaming_curve_points(not_correct,dist_pred,weights,num_thresholds,curve='PR')
-        
+
         dbg = []#[not_correct, dist_pred, dist_class]
+
+    stream_vars_valid = [v for v in tf.local_variables() if 'Roc/' in v.name]
+    reset_op = tf.variables_initializer(stream_vars_valid)
 
     update_op = [dist_update]
     if not FLAGS.write_out:
@@ -546,9 +558,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     input_fetch = [input_name, input_tensor, annot_tensor]
 
-    fetch = {"update": update_op,
-        "roc": RocPoints,
-        }
+    fetch = {"update": update_op}
 
     if FLAGS.train_kernel:
         fetch["predictions"] = pred_tensor
@@ -565,14 +575,15 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         fetch["unscaled_logits_out"] = unscaled_logits[0]
 
     grads = tf.gradients(min_dist, placeholder_tensor)
+    epsilon_pl = tf.placeholder(tf.float32, (), "epsilon")
     if epsilon > 0.0:
-        adv_img = placeholder_tensor - epsilon*tf.sign(grads)
+        adv_img = placeholder_tensor - epsilon_pl*tf.sign(grads)
     else:
         adv_img = tf.expand_dims(placeholder_tensor, 0)
 
     num_step = num_images // batch
     print("running for", num_step, "steps")
-    os.makedirs(dump_dir, exist_ok=True)
+    #os.makedirs(dump_dir, exist_ok=True)
 
     if FLAGS.write_out:
         write_queue = Queue(30)
@@ -606,22 +617,31 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             image_path = inputs[0][0].decode("utf-8")
             filename = os.path.basename(image_path)
             dump_filename = os.path.join(dump_dir, filename + ".npy")
-
-            adv_img_out = sess.run(adv_img, feed_dict={placeholder_tensor: img_raw, annot_pl: annot_raw})
+            adv_img_out = sess.run(adv_img, feed_dict={placeholder_tensor: img_raw, annot_pl: annot_raw, epsilon_pl: epsilon})
             adv_img_out = adv_img_out[0]
 
-            res, dbg_v = sess.run([fetch, dbg], feed_dict={
-                            placeholder_tensor: adv_img_out, annot_pl: annot_raw})
+            #import pdb; pdb.set_trace()
+            #sess.run(reset_op)
+            res, dbg_v = sess.run([fetch, dbg], feed_dict={placeholder_tensor: adv_img_out, annot_pl: annot_raw})
 
-            roc = res["roc"]
+            roc = sess.run(RocPoints)
             auc = -np.trapz(roc[:,1], roc[:,0])
+            # if auc <= 0.8480947:
+            #     ###DBG
+            #     def sigmoid(x):
+            #         return 1 / (1 + np.exp(-x))
+            #     min_og, not_correct_out = sess.run([min_dist, not_correct], {placeholder_tensor: img_raw, annot_pl: annot_raw})
+            #     min_adv = sess.run(min_dist, {placeholder_tensor: adv_img_out, annot_pl: annot_raw})
+            #     norm_min_og = (min_og - mean_value)/std_value
+            #     norm_min_adv = (min_adv - mean_value)/std_value
+            #     pred_og = sigmoid(norm_min_og * 0.13273349404335022 + 0.38076120615005493)
+            #     pred_adv = sigmoid(norm_min_adv * 0.13273349404335022 + 0.38076120615005493)
+            #     pred_avg = np.mean([pred_og, pred_adv],0)
+            #     #######
+            #     import pdb; pdb.set_trace()
+            #     print(filename)
 
             dist_miou_v = sess.run([dist_miou])
-            #import pdb; pdb.set_trace()
-            # if idx % 25 == 0 and idx != 0:
-            #     roc = sess.run(RocPoints)
-            #     plt.plot(roc[:,0], roc[:,1])
-            #     plt.show()
 
             if FLAGS.train_kernel:
                 predictions = res["predictions"]
@@ -633,7 +653,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 # kernel = gkern(sigma=0.2)
                 dilated = np.expand_dims(cv2.filter2D(edges,-1,filter[...,0,0]),-1).astype(np.float32)
                 dilated = dilated/np.max(dilated)
-                
+
                 disp = cv2.resize(np.concatenate([to_img(min_dist_out), to_img(dilated)], 1), (int(1920), int(1080)))
                 cv2.imshow("test", disp)
                 cv2.waitKey(1)
@@ -653,7 +673,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 min_dist_v[np.logical_not(np.isfinite(min_dist_v))] = np.nanmin(min_dist_out)
                 min_dist_v = min_dist_v - np.min(min_dist_v) #min now at 0
                 min_dist_v = (255*min_dist_v/np.max(min_dist_v)).astype(np.uint8) #max now at 255
-                
+
                 save_location = os.path.join(output_directory, filename)
                 dist_filename = os.path.join(dist_dir, filename)
                 min_filename = os.path.join(min_dir, filename)
@@ -675,7 +695,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 write_queue.put((idx, save_location, prediction_colour))
                 write_queue.put((idx, min_filename, min_dist_v))
                 write_queue.put((idx, dist_filename, dist_out))
-            
+
             if FLAGS.write_out:
                 img_dist_out = res["img_dist_out"]
                 unscaled_logits_out = res["unscaled_logits_out"]
@@ -684,7 +704,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 write_queue.put((idx, dump_filename, {"dist": img_dist_out, "unscaled_logits": unscaled_logits_out}))
                 #else:
                 #    print("skipping", filename, "                          ")
-            
+
             if FLAGS.debug:
                 dist_out = res[2][0].astype(np.uint8)
                 full_dist_out = res[4][0]
@@ -694,11 +714,11 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 min_dist_v[np.logical_not(np.isfinite(min_dist_v))] = np.nanmin(full_dist_out)
                 min_dist_v = min_dist_v - np.min(min_dist_v) #min now at 0
                 min_dist_v = (255*min_dist_v/np.max(min_dist_v)).astype(np.uint8) #max now at 255
-                
+
                 final_out = res[7][0]
                 annot_out = inputs[2][0]
                 img_out = inputs[1][0]
-                
+
                 thresh = np.median(min_dist_out)
                 grain = (np.max(min_dist_out) - np.min(min_dist_out))/300
                 print(thresh, "  ", grain)
@@ -723,7 +743,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                         print(thresh, "  ", grain)
                     elif key == 112: #p
                         import pdb; pdb.set_trace()
-            
+
             elapsed = timeit.default_timer() - start_time
             end = "\r"
             if idx % 50 == 0:
@@ -733,15 +753,15 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 qsize = write_queue.qsize()
             else:
                 qsize = 0
-            
+
             print('{0:.4f} iter: {1}, iou: {2:.6f}, auc: {3:.6f}'.format(elapsed, idx+1, dist_miou_v[0], auc))
 
         if not FLAGS.write_out:
             roc = sess.run(RocPoints)
             pr = sess.run(PrPoints)
-            
+
             make_plots(roc,pr,num_thresholds)
-        
+
         if FLAGS.write_out:
             for w in writers:
                 w.close()
@@ -801,10 +821,14 @@ def main(_):
         else:
             input_reader = pipeline_config.ood_eval_input_reader
     else:
-        input_reader = pipeline_config.eval_input_reader
-        
+        if FLAGS.use_train:
+            input_reader = pipeline_config.train_input_reader
+        else:
+            input_reader = pipeline_config.eval_input_reader
+
     input_reader.shuffle = True
     input_reader.num_epochs = 1
+    input_reader.num_examples = min(1500, input_reader.num_examples)
     input_dict = dataset_builder.build(input_reader)
 
     ignore_label = pipeline_config.ood_config.ignore_label

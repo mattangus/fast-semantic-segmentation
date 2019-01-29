@@ -67,8 +67,12 @@ flags.DEFINE_boolean('use_pool', False,
 flags.DEFINE_boolean('use_patch', False,
                      'avg pool over spatial dims')
 
+flags.DEFINE_boolean('use_dtform', False,
+                     'use distance transform')
+
 flags.DEFINE_integer("max_iters", 1000000000, "limit the number of iterations for large datasets")
 
+epoch = 1
 
 def create_input(tensor_dict,
                 batch_size,
@@ -94,12 +98,33 @@ def create_input(tensor_dict,
         capacity=prefetch_queue_capacity,
         dynamic_pad=False)
 
+def dist_transform(annot):
+    lr = tf.not_equal(annot[:,1:,1:] - annot[:,:-1,1:],0)
+    ud = tf.not_equal(annot[:,1:,1:] - annot[:,1:,:-1],0)
+    both = tf.to_float(tf.logical_not(tf.logical_or(lr,ud)))*255
+    both = tf.pad(both,[[0,0],[0,1],[0,1]])
+
+    def tform(img):
+        ret = cv2.distanceTransform(img, cv2.DIST_L2, 3)
+        return ret
+
+    dtform = tf.map_fn(lambda x: tf.py_func(tform, [tf.cast(x,tf.uint8)], tf.float32, False), both)
+    dtform.set_shape(both.shape)
+    return dtform
 
 def process_annot(annot_tensor, feat, num_classes):
+    ed = tf.expand_dims
     one_hot = tf.one_hot(annot_tensor, num_classes)
-    resized = tf.expand_dims(tf.image.resize_nearest_neighbor(one_hot, feat.get_shape().as_list()[1:-1]), -1)
-    sorted_feats = tf.expand_dims(feat, -2)*resized #broadcast
+    resized = ed(tf.image.resize_nearest_neighbor(one_hot, feat.get_shape().as_list()[1:-1]), -1)
+    sorted_feats = ed(feat, -2)*resized #broadcast
     avg_mask = tf.cast(tf.not_equal(resized, 0), tf.float32)
+    if FLAGS.use_dtform:
+        max_dist = 10
+        dtform = dist_transform(annot_tensor)
+        mask = tf.to_float(dtform > max_dist)
+        weights = (max_dist*mask + (1-mask)*dtform)/max_dist
+        weight_resize = ed(tf.image.resize_nearest_neighbor(ed(weights, -1), feat.get_shape().as_list()[1:-1]),-1)
+        avg_mask = avg_mask*weight_resize
     return avg_mask, sorted_feats
 
 def run_inference_graph(model, trained_checkpoint_prefix,
@@ -109,7 +134,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     effective_shape = [None] + input_shape
 
     if isinstance(model._feature_extractor, resnet_ex_class):
-        batch = 1
+        batch = 2
     elif isinstance(model._feature_extractor, mobilenet_ex_class):
         batch = 1
 
@@ -119,7 +144,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     input_tensor = input_dict[dataset_builder._IMAGE_FIELD]
     annot_tensor = input_dict[dataset_builder._LABEL_FIELD]
 
-    flip = False
+    flip = True
     if flip:
         input_tensor = tf.concat([input_tensor, tf.image.flip_left_right(input_tensor)], 0)
         annot_tensor = tf.concat([annot_tensor[...,0], tf.image.flip_left_right(annot_tensor)[...,0]], 0)
@@ -135,8 +160,10 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         pad_to_shape=pad_to_shape,
         label_color_map=label_color_map)
 
-    if FLAGS.use_patch:
-        stats_dir = os.path.join(output_directory, "stats.patch")
+    final_logits = outputs[model.final_logits_key]
+
+    if FLAGS.use_dtform:
+        stats_dir = os.path.join(output_directory, "stats.dtform")
     else:
         stats_dir = os.path.join(output_directory, "stats")
     class_mean_file = os.path.join(stats_dir, "class_mean.npz")
@@ -144,7 +171,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     first_pass = True
     with tf.device("gpu:1"):
-        avg_mask, sorted_feats = process_annot(annot_tensor, outputs[model.final_logits_key], num_classes)
+        avg_mask, sorted_feats = process_annot(annot_tensor, final_logits, num_classes)
 
         # if os.path.exists(mean_file) and os.path.exists(class_mean_file):
         if os.path.exists(class_mean_file):
@@ -169,8 +196,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         update_op = stat_computer.get_update_op()
     
     coord = tf.train.Coordinator()
-    config = tf.ConfigProto()
-    #config.gpu_options.allow_growth=True
+    config = tf.ConfigProto(allow_soft_placement=True)
+    config.gpu_options.allow_growth=True
 
     full_eye = None
     coord = tf.train.Coordinator()
@@ -182,10 +209,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
         saver.restore(sess, trained_checkpoint_prefix)
 
-        k = None
-        class_k = None
-
-        num_step = num_images // batch
+        num_step = epoch * num_images // batch
+        print("running for", num_step*batch)
         for idx in range(num_step):
             start_time = timeit.default_timer()
 
@@ -242,7 +267,7 @@ def main(_):
     #input_reader = pipeline_config.eval_input_reader
     input_reader = pipeline_config.train_input_reader
     input_reader.shuffle = False
-    input_reader.num_epochs = 1
+    input_reader.num_epochs = epoch
     input_dict = dataset_builder.build(input_reader)
 
     iters = min(input_reader.num_examples, FLAGS.max_iters)

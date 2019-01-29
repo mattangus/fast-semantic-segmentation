@@ -1,6 +1,7 @@
 r"""Preprocessing step for inptut images"""
 import functools
 import tensorflow as tf
+import random
 
 from protos import preprocessor_pb2
 from builders import dataset_builder
@@ -20,7 +21,7 @@ _IMAGE_SCALE_KEY = 'IMAGE_SCALE_KEY'
 
 _IMAGE_HORIZONTAL_FLIP_KEY = 'IMAGE_HORIZONTAL_FLIP_STEP'
 
-_RANDOM_PREPROCESSOR_SEED = 7
+_RANDOM_PREPROCESSOR_SEED = random.randint(-(2**32-1),2**32-1)#7
 
 
 def _get_or_create_preprocess_rand_vars(generator_func,

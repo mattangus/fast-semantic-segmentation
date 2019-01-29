@@ -160,39 +160,6 @@ def _get_images_from_path(input_path):
 def nan_to_num(val):
     return tf.where(tf.is_nan(val), tf.zeros_like(val), val)
 
-# def process_logits_l2(final_logits, mean_v, var_v, depth, pred_shape, num_classes, use_pool):
-#     print("WARNING: Using l2 norm. not mahalanobis distance")
-#     mean_p = tf.placeholder(tf.float32, mean_v.shape, "mean")
-#     var_inv_p = tf.placeholder(tf.float32, var_v.shape, "var_inv")
-#     var_inv = var_inv_p
-#     mean = mean_p
-
-#     if use_pool:
-#         var_brod = tf.ones_like(var_inv)
-#         mean_brod = tf.ones_like(mean)
-#         #import pdb; pdb.set_trace()
-#         var_inv = tf.reduce_mean(var_inv, axis=[0,1,2], keepdims=True)*var_brod
-#         mean = tf.reduce_mean(mean, axis=[0,1,2], keepdims=True)*mean_brod
-
-#     in_shape = final_logits.get_shape().as_list()
-#     var_inv = tf.reshape(var_inv, [-1, in_shape[-1], in_shape[-1]])
-#     mean = tf.reshape(mean, [-1, num_classes, in_shape[-1]])
-
-#     final_logits = tf.reshape(final_logits, [-1, depth])
-
-#     mean_sub = tf.expand_dims(final_logits,-2) - mean
-
-#     dist = tf.reduce_sum(tf.square(mean_sub),1)
-
-#     img_dist = tf.expand_dims(tf.reshape(dist, in_shape[1:-1] + [num_classes]), 0)
-#     img_dist = tf.where(tf.equal(img_dist, tf.zeros_like(img_dist)), tf.ones_like(img_dist)*float("inf"), img_dist)
-#     full_dist = tf.image.resize_bilinear(img_dist, (pred_shape[1],pred_shape[2]))
-#     dist_class = tf.argmin(full_dist, -1)
-#     min_dist_v = tf.reduce_min(full_dist, -1)
-#     # scaled_dist = full_dist/tf.reduce_max(full_dist)
-#     # dist_out = (scaled_dist*255).astype(np.uint8)
-#     return dist_class, full_dist, min_dist_v, mean_p, var_inv_p #, [temp, temp2, left, dist, img_dist]
-
 def process_logits(final_logits, mean_v, var_inv_v, depth, pred_shape, num_classes, global_cov, global_mean):
     mean_p = tf.placeholder(tf.float32, mean_v.shape, "mean_p")
     var_inv_p = tf.placeholder(tf.float32, var_inv_v.shape, "var_inv_p")
@@ -249,7 +216,15 @@ def pred_to_ood(pred, mean_value, std_value, thresh=None):
         return tf.to_float(pred >= median)
     else:
         min_dist_norm = (pred - mean_value) / std_value
-        return tf.nn.sigmoid(min_dist_norm)
+        return tf.nn.sigmoid(min_dist_norm * 0.13273349404335022 + 0.38076120615005493)
+
+def get_valid(labels, ignore_label):
+    ne = [tf.not_equal(labels, il) for il in ignore_label]
+    neg_validity_mask = ne.pop(0)
+    for v in ne:
+        neg_validity_mask = tf.logical_and(neg_validity_mask, v)
+    
+    return neg_validity_mask
 
 def get_miou(labels,
              predictions,
@@ -258,10 +233,7 @@ def get_miou(labels,
              do_ood,
              neg_validity_mask=None):
     if neg_validity_mask is None:
-        ne = [tf.not_equal(labels, il) for il in ignore_label]
-        neg_validity_mask = ne.pop(0)
-        for v in ne:
-            neg_validity_mask = tf.logical_and(neg_validity_mask, v)
+        neg_validity_mask = get_valid(labels, ignore_label)
 
     if do_ood:
         #0 = in distribution, 1 = OOD
@@ -748,44 +720,53 @@ def test_plots():
     import sys
     sys.exit(0)
 
-def make_plots(roc, pr, num_thresholds):
+def get_threshs(num_thresholds):
     eps = 1e-7
-    #from http://www.medicalbiostatistics.com/roccurve.pdf page 6
-    optimal = np.argmin(np.sqrt(np.square(1-roc[:,1]) + np.square(roc[:,0])))
     #from https://github.com/tensorflow/tensorflow/blob/r1.12/tensorflow/contrib/metrics/python/ops/metric_ops.py
     threshs = [(i + 1) * 1.0 / (num_thresholds - 1) for i in range(num_thresholds - 2)]
     threshs = [0.0 - eps] + threshs + [1.0 + eps]
-    print("optimal threshold:", threshs[optimal])
+    return threshs
+
+def get_optimal_thresh(roc, threshs):
+    #from http://www.medicalbiostatistics.com/roccurve.pdf page 6
+    optimal = np.argmin(np.sqrt(np.square(1-roc[:,1]) + np.square(roc[:,0])))
+    optimal_point = roc[optimal]
+    optimal_thresh = threshs[optimal]
+    return optimal_thresh, optimal_point
+
+def make_plots(roc, pr, num_thresholds):
+    threshs = get_threshs(num_thresholds)
+    optimal_thresh, optimal_point = get_optimal_thresh(roc, threshs)
+    print("optimal threshold:", optimal_thresh)
     AUC = -np.trapz(roc[:,1], roc[:,0])
     print("area under curve:", AUC)
-    optimal_point = roc[optimal]
     min_v = -0.01
     max_v = 1.01
     
     #roc curve
-    plt.subplot(1, 2, 1)
-    plt.plot(roc[:,0], roc[:,1])
-    plt.scatter(optimal_point[0], optimal_point[1], marker="o", c="r")
-    plt.plot(threshs, threshs, linestyle="--", color="black", linewidth=1)
-    plt.ylim((min_v, max_v))
-    plt.xlim((min_v, max_v))
-    plt.title("ROC")
+    # plt.subplot(1, 2, 1)
+    # plt.plot(roc[:,0], roc[:,1])
+    # plt.scatter(optimal_point[0], optimal_point[1], marker="o", c="r")
+    # plt.plot(threshs, threshs, linestyle="--", color="black", linewidth=1)
+    # plt.ylim((min_v, max_v))
+    # plt.xlim((min_v, max_v))
+    # plt.title("ROC")
 
-    #pr curve
-    plt.subplot(1,2,2)
-    plt.plot(pr[:,0], pr[:,1])
-    plt.ylim((min_v, max_v))
-    plt.xlim((min_v, max_v))
-    plt.title("PR")
+    # #pr curve
+    # plt.subplot(1,2,2)
+    # plt.plot(pr[:,0], pr[:,1])
+    # plt.ylim((min_v, max_v))
+    # plt.xlim((min_v, max_v))
+    # plt.title("PR")
 
-    plt.show()
+    #plt.show()
 
     print("ROCpoints:", repr(roc))
     print("PRpoints:", repr(pr))
 
 
 def run_inference_graph(model, trained_checkpoint_prefix,
-                        input_dict, num_images, ignore_label, input_shape, pad_to_shape,
+                        dataset, num_images, ignore_label, input_shape, pad_to_shape,
                         label_color_map, output_directory, num_classes, eval_dir,
                         min_dir, dist_dir, hist_dir, dump_dir):
     assert len(input_shape) == 3, "input shape must be rank 3"
@@ -794,11 +775,11 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     epsilon = FLAGS.epsilon
     dump_dir += "_" + str(epsilon)
     #from normalise_data.py
-    norms = np.load(os.path.join(dump_dir, "normalisation.npy")).item()
-    mean_value = norms["mean"]
-    std_value = norms["std"]
-    # mean_value = 508.7571
-    # std_value = 77.60572284853058
+    #norms = np.load(os.path.join(dump_dir, "normalisation.npy")).item()
+    # mean_value = norms["mean"]
+    # std_value = norms["std"]
+    mean_value = 508.7571
+    std_value = 77.60572284853058
     if FLAGS.max_softmax:
         thresh = 0.07100591715976332 #dim dist from sun train
         #thresh = 0.0650887573964497 #dim from sun train
@@ -806,8 +787,10 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         thresh = 0.37583892617449666 #dim from sun train
     effective_shape = [batch] + input_shape
 
-    input_queue = create_input(input_dict, batch, 15, 15, 15)
-    input_dict = input_queue.dequeue()
+    dataset = dataset.batch(batch, drop_remainder=True)
+    dataset = dataset.apply(tf.data.experimental.ignore_errors())
+    data_iter = dataset.make_one_shot_iterator()
+    input_dict = data_iter.get_next()
 
     input_tensor = input_dict[dataset_builder._IMAGE_FIELD]
     annot_tensor = input_dict[dataset_builder._LABEL_FIELD]
@@ -835,13 +818,14 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     global_cov = FLAGS.global_cov
     global_mean = FLAGS.global_mean
 
-    print("loading means and covs")
-    mean = np.load(class_mean_file)["arr_0"]
-    var_inv = np.load(class_cov_file)["arr_0"]
-    print("done loading")
-    var_dims = list(var_inv.shape[-2:])
-    mean_dims = list(mean.shape[-2:])
-    depth = mean_dims[-1]
+    if not FLAGS.max_softmax:
+        print("loading means and covs")
+        mean = np.load(class_mean_file)["arr_0"]
+        var_inv = np.load(class_cov_file)["arr_0"]
+        print("done loading")
+        var_dims = list(var_inv.shape[-2:])
+        mean_dims = list(mean.shape[-2:])
+        depth = mean_dims[-1]
     
     if global_cov:
         var_brod = np.ones_like(var_inv)
@@ -854,15 +838,19 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     #mean = np.reshape(mean, [-1] + mean_dims)
     #var_inv = np.reshape(var_inv, [-1] + var_dims)
     with tf.device("gpu:1"):
-        dist_class, img_dist, full_dist, min_dist, mean_p, var_inv_p, vars_noload, dbg  = process_logits(final_logits, mean, var_inv, depth, pred_tensor.get_shape().as_list(), num_classes, global_cov, global_mean)
-        dist_colour = _map_to_colored_labels(dist_class, pred_tensor.get_shape().as_list(), label_color_map)
-        pred_colour = _map_to_colored_labels(pred_tensor, pred_tensor.get_shape().as_list(), label_color_map)
+        if not FLAGS.max_softmax:
+            dist_class, img_dist, full_dist, min_dist, mean_p, var_inv_p, vars_noload, dbg  = process_logits(final_logits, mean, var_inv, depth, pred_tensor.get_shape().as_list(), num_classes, global_cov, global_mean)
+            dist_colour = _map_to_colored_labels(dist_class, pred_tensor.get_shape().as_list(), label_color_map)
+            pred_colour = _map_to_colored_labels(pred_tensor, pred_tensor.get_shape().as_list(), label_color_map)
+            selected = min_dist
 
         if do_ood:
             if FLAGS.max_softmax:
                 interp_logits = tf.image.resize_bilinear(unscaled_logits, pred_tensor.shape.as_list()[1:3])
                 dist_pred = 1.0 - tf.reduce_max(tf.nn.softmax(interp_logits),-1, keepdims=True)
                 dist_class = tf.to_float(dist_pred >= thresh)
+                selected = dist_pred
+                vars_noload = []
             else:
                 #dist_pred = tf.reduce_min(tf.nn.softmax(full_dist), -1, keepdims=True)
                 dist_pred = tf.expand_dims(pred_to_ood(min_dist, mean_value, std_value, thresh),-1)
@@ -871,9 +859,10 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             #pred is the baseline of assuming all ood
             pred_tensor = tf.ones_like(pred_tensor)
 
-    with tf.device("gpu:0"):
+    with tf.device("gpu:1"):
+        neg_validity_mask = get_valid(annot_pl, ignore_label)
         with tf.variable_scope("PredIou"):
-            (pred_miou, pred_conf_mat, pred_update), neg_validity_mask = get_miou(annot_pl, pred_tensor, num_classes, ignore_label, do_ood)
+            (pred_miou, pred_conf_mat, pred_update), _ = get_miou(annot_pl, pred_tensor, num_classes, ignore_label, do_ood, neg_validity_mask)
         with tf.variable_scope("DistIou"):
             (dist_miou, dist_conf_mat, dist_update), _ = get_miou(annot_pl, dist_class, num_classes, ignore_label, do_ood, neg_validity_mask)
   
@@ -889,16 +878,16 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     update_op = [pred_update, dist_update, pr_update, roc_update]
     update_op = tf.group(update_op)
 
-    mean = np.reshape(mean, mean_p.get_shape().as_list())
-    var_inv = np.reshape(var_inv, var_inv_p.get_shape().as_list())
+    if not FLAGS.max_softmax:
+        mean = np.reshape(mean, mean_p.get_shape().as_list())
+        var_inv = np.reshape(var_inv, var_inv_p.get_shape().as_list())
 
     input_fetch = [input_name, input_tensor, annot_tensor]
 
     fetch = {"update": update_op,
-            "roc": RocPoints,
         }
-    
-    dbg = [min_dist, dist_pred]
+
+    dbg = []
 
     if FLAGS.train_kernel:
         fetch["predictions"] = pred_tensor
@@ -914,7 +903,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         fetch["img_dist_out"] = img_dist[0]
         fetch["unscaled_logits_out"] = unscaled_logits[0]
 
-    grads = tf.gradients(min_dist, placeholder_tensor)
+    grads = tf.gradients(selected, placeholder_tensor)
     if epsilon > 0.0:
         adv_img = placeholder_tensor - epsilon*tf.sign(grads)
     else:
@@ -922,7 +911,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     num_step = num_images // batch
     print("running for", num_step, "steps")
-    os.makedirs(dump_dir, exist_ok=True)
+    #os.makedirs(dump_dir, exist_ok=True)
 
     if FLAGS.write_out:
         write_queue = Queue(30)
@@ -932,9 +921,10 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     config = tf.ConfigProto(allow_soft_placement=True)
     #config.gpu_options.allow_growth = True
     with tf.Session(config=config) as sess:
-        sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()],
-                    {mean_p: mean, var_inv_p: var_inv})
-        tf.train.start_queue_runners(sess)
+        init_feed = {}
+        if not FLAGS.max_softmax:
+            init_feed = {mean_p: mean, var_inv_p: var_inv}
+        sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()],init_feed)
         vars_toload = [v for v in tf.global_variables() if v not in vars_noload]
         saver = tf.train.Saver(vars_toload)
         saver.restore(sess, trained_checkpoint_prefix)
@@ -963,7 +953,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             res, dbg_v = sess.run([fetch, dbg], feed_dict={
                             placeholder_tensor: adv_img_out, annot_pl: annot_raw})
 
-            roc = res["roc"]
+            roc = sess.run(RocPoints)
             auc = -np.trapz(roc[:,1], roc[:,0])
 
             pred_miou_v, dist_miou_v = sess.run([pred_miou, dist_miou])
@@ -1151,15 +1141,15 @@ def main(_):
             input_reader = pipeline_config.ood_eval_input_reader
     else:
         input_reader = pipeline_config.eval_input_reader
-        
+
     input_reader.shuffle = True
     input_reader.num_epochs = 1
-    input_dict = dataset_builder.build(input_reader)
+    dataset = dataset_builder.build(input_reader)
 
     ignore_label = pipeline_config.ood_config.ignore_label
 
     run_inference_graph(segmentation_model, FLAGS.trained_checkpoint,
-                        input_dict, input_reader.num_examples, ignore_label, input_shape, pad_to_shape,
+                        dataset, input_reader.num_examples, ignore_label, input_shape, pad_to_shape,
                         label_map, output_directory, num_classes, eval_dir, min_dir, dist_dir, hist_dir,
                         dump_dir)
 
