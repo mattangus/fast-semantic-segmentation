@@ -2,11 +2,9 @@ syntax = "proto2";
 
 package fast_semantic_segmentation.protos;
 import "protos/pspnet.proto";
-import "protos/icnet.proto";
 
-message FastSegmentationModel {
+message SegmentationModel {
     oneof model {
         PSPNet pspnet = 1;
-        ICNet icnet = 2;
     }
 }

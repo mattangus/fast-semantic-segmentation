@@ -188,7 +188,7 @@ def train_segmentation_model(create_model_fn,
                              log_memory=False,
                              gradient_checkpoints=None,
                              sync_bn_accross_gpu=False):
-    """Create an instance of the FastSegmentationModel"""
+    """Create an instance of the SegmentationModel"""
     _, segmentation_model = create_model_fn()
     deploy_config = model_deploy.DeploymentConfig(
         num_clones=num_clones,

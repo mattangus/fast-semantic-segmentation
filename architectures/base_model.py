@@ -18,7 +18,7 @@ import tensorflow as tf
 slim = tf.contrib.slim
 
 
-class FastSegmentationModel(object):
+class SegmentationModel(object):
     """Abstract base class for semantic segmentation models."""
 
     __metaclass__ = ABCMeta

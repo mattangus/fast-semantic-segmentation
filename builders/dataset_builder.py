@@ -24,9 +24,10 @@ def decode_image_file(filename, channels, size=None, resize=None,
 
     valid_size = valid_imsize(size)
     valid_resize = valid_imsize(resize)
-    
+
     if not valid_resize and valid_size:
-        img.set_shape(size)
+        shape = list(size) + [channels]
+        img.set_shape(shape)
     elif valid_resize:
         img = tf.image.resize_images(img, resize, method)
 
@@ -70,8 +71,29 @@ def _create_tf_example_decoder(input_reader_config):
 
     return decode_example
 
+def _build_random(input_reader_config):
+    height = input_reader_config.height
+    width = input_reader_config.width
+    
+    reader_config = input_reader_config.tf_record_input_reader
+    if "normal" in reader_config.input_path:
+        rand = tf.random.normal((height, width),mean=0.5,stddev=1.0)
+        rand = tf.clip_by_value(rand, 0.0, 1.0)*255
+    elif "uniform" in reader_config.input_path:
+        rand = tf.random.uniform((height, width),0.0, 255.0)
+    
+    items_to_handlers = {
+        _IMAGE_FIELD: rand,
+        _IMAGE_NAME_FIELD: tf.constant("rand"),
+        _LABEL_FIELD: tf.ones((height, width))*19,
+    }
 
-def build(input_reader_config):
+    dataset = tf.data.Dataset.from_tensor_slices(items_to_handlers)
+    dataset = dataset.repeat(input_reader_config.num_examples)
+
+    return dataset
+
+def build(input_reader_config, num_epoch):
     if not isinstance(input_reader_config, input_reader_pb2.InputReader):
         raise ValueError('input_reader_config not of type '
                          'input_reader_pb2.InputReader.')
@@ -81,24 +103,35 @@ def build(input_reader_config):
         raise ValueError('input_reader_config must have '
                              '`tf_record_input_reader`.')
 
-    if not reader_config.input_path or \
-            not os.path.isfile(reader_config.input_path[0]):
-        raise ValueError('At least one input path must be specified in '
-                         '`input_reader_config`.')
 
-    decoder = _create_tf_example_decoder(input_reader_config)
+    if ".dist" not in reader_config.input_path:
 
-    dataset = tf.data.TFRecordDataset(reader_config.input_path[:],
-                            "GZIP",
-                            input_reader_config.num_readers)
-    
-    dataset = dataset.map(decoder, num_parallel_calls=input_reader_config.num_readers)
-    epochs = input_reader_config.num_epochs if input_reader_config.num_epochs > 0 else None
-    dataset = dataset.repeat(epochs)
+        if not reader_config.input_path or \
+                not os.path.isfile(reader_config.input_path[0]):
+            raise ValueError('At least one input path must be specified in '
+                            '`input_reader_config`.')
+
+
+        decoder = _create_tf_example_decoder(input_reader_config)
+
+        dataset = tf.data.TFRecordDataset(reader_config.input_path[:],
+                                "GZIP",
+                                input_reader_config.num_readers)
+        
+        dataset = dataset.map(decoder, num_parallel_calls=input_reader_config.num_readers)
+    else:
+        dataset = _build_random(input_reader_config)
+    epochs = num_epoch if num_epoch > 0 else None
     
     if input_reader_config.shuffle:
-        dataset = dataset.shuffle(input_reader_config.queue_capacity,
-                                    seed=_DATASET_SHUFFLE_SEED)
+        sar_fn = tf.data.experimental.shuffle_and_repeat
+        sar = sar_fn(input_reader_config.queue_capacity,
+                        epochs, seed=_DATASET_SHUFFLE_SEED)
+        dataset.apply(sar)
         print("shuffle seed:", _DATASET_SHUFFLE_SEED)
+    else:
+        dataset = dataset.repeat(epochs)
+
+    dataset = dataset.prefetch(input_reader_config.prefetch_queue_capacity)
 
     return dataset

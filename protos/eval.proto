@@ -3,10 +3,8 @@ syntax = "proto2";
 package fast_semantic_segmentation.protos;
 
 message EvalConfig {
-    optional uint32 num_examples = 1 [default=5000];
-    repeated uint32 ignore_label = 2;
-    optional EvalInputType eval_input_type = 3;
-    optional bool flipped = 4;
+    optional EvalInputType eval_input_type = 1;
+    optional bool flipped = 2;
 }
 
 message EvalInputType {

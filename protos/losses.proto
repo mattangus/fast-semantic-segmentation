@@ -9,8 +9,6 @@ message Loss {
     optional DistLoss dist_loss = 2;
 
     optional bool use_auxiliary_loss = 3 [default=false];
-
-    repeated uint32 ignore_label = 4;
 }
 
 message ClassificationLoss {

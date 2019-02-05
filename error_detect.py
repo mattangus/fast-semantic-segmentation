@@ -513,8 +513,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     with tf.device("gpu:1"):
         not_correct = tf.to_float(tf.not_equal(annot_pl, tf.to_float(pred_tensor)))
         dist_class, img_dist, full_dist, min_dist, mean_p, var_inv_p, vars_noload, dbg  = process_logits(final_logits, mean, var_inv, depth, pred_tensor.get_shape().as_list(), num_classes, global_cov, global_mean)
-        dist_colour = _map_to_colored_labels(dist_class, pred_tensor.get_shape().as_list(), label_color_map)
-        pred_colour = _map_to_colored_labels(pred_tensor, pred_tensor.get_shape().as_list(), label_color_map)
+        dist_colour = _map_to_colored_labels(dist_class, label_color_map)
+        pred_colour = _map_to_colored_labels(pred_tensor, label_color_map)
 
         if FLAGS.max_softmax:
             interp_logits = tf.image.resize_bilinear(unscaled_logits, pred_tensor.shape.as_list()[1:3])

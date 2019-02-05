@@ -11,8 +11,9 @@ from builders import preprocessor_builder as preprocessor
 slim = tf.contrib.slim
 
 
-def _map_to_colored_labels(segmentation_map, shape_list, color_map):
+def _map_to_colored_labels(segmentation_map, color_map):
     # resolve shapes
+    shape_list = segmentation_map.shape.as_list()
     num_classes = len(color_map)
     output_channels = len(color_map[0])
     # convert label map format
@@ -51,7 +52,7 @@ def _image_tensor_input_placeholder(input, input_shape=None, pad_to_shape=None, 
         input_shape = (None, None, None, 3)
     if input is None:
         placeholder_tensor = tf.placeholder(
-            dtype=input_type, shape=input_shape, name='inputs')
+            dtype=input_type, shape=input_shape, name='image_placeholder')
     else:
         placeholder_tensor = input
     if pad_to_shape is not None:
@@ -74,8 +75,7 @@ def deploy_segmentation_inference_graph(model, input_shape,
             output_collection_name=output_collection_name)
     predictions = outputs[model.main_class_predictions_key]
     if label_color_map is not None:
-        output_shape = predictions.get_shape().as_list()
-        predictions = _map_to_colored_labels(predictions, output_shape, label_color_map)
+        predictions = _map_to_colored_labels(predictions, label_color_map)
 
     if pad_to_shape is not None:
         if len(input_shape) < 4:

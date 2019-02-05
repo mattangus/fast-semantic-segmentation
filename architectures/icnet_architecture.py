@@ -15,7 +15,7 @@ from . import base_model as model
 slim = tf.contrib.slim
 
 
-class ICNetArchitecture(model.FastSegmentationModel):
+class ICNetArchitecture(model.SegmentationModel):
     """ICNet Architecture definition."""
 
     def __init__(self,

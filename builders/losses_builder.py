@@ -108,7 +108,7 @@ def _l2norm_smooth(predictions, labels, ignore_label):
 
     return diff + (0.01 * smooth)
 
-def build(loss_config):
+def build(loss_config, ignore_label):
     if not isinstance(loss_config, losses_pb2.Loss):
         raise ValueError('loss_config not of type '
                          'losses_pb2.ClassificationLoss.')
@@ -118,10 +118,10 @@ def build(loss_config):
     class_loss_type = loss_config.classification_loss.WhichOneof('loss_type')
     if class_loss_type == 'softmax':
         class_loss = partial(_softmax_classification_loss,
-            ignore_label=loss_config.ignore_label)
+            ignore_label=ignore_label)
     elif class_loss_type == 'focal':
         class_loss = partial(_focal_loss,
-            ignore_label=loss_config.ignore_label)
+            ignore_label=ignore_label)
     else:
         raise ValueError('Empty class loss config.')
     
