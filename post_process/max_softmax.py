@@ -11,9 +11,10 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
     
     def __init__(self, model, outputs_dict, num_classes,
                     annot, image, ignore_label, process_annot,
+                    num_gpus,
                     #class specific
                     epsilon, t_value):
-        super().__init__("MaxSoftmax", model, outputs_dict)
+        super().__init__("MaxSoftmax", model, outputs_dict, num_gpus)
         self.num_classes = num_classes
         self.annot = annot
         self.image = image

@@ -11,9 +11,10 @@ class MahalProcessor(pp.PostProcessor):
 
     def __init__(self, model, outputs_dict, num_classes,
                     annot, image, ignore_label, process_annot,
-                    #class specifit
+                    num_gpus,
+                    #class specific
                     eval_dir, epsilon, global_cov, global_mean):
-        super().__init__("Mahal", model, outputs_dict)
+        super().__init__("Mahal", model, outputs_dict, num_gpus)
         self.eval_dir = eval_dir
         stats_dir = os.path.join(eval_dir, "stats")
         self.class_mean_file = os.path.join(stats_dir, "class_mean.npz")
@@ -29,6 +30,14 @@ class MahalProcessor(pp.PostProcessor):
         self.global_mean = global_mean
         self._process_annot = process_annot
         self._load_stats()
+
+        self.logit_gpu = "gpu:0"
+        self.pre_process_gpu = "gpu:0"
+        if num_gpus > 1:
+            self.logit_gpu = "gpu:1"
+            self.pre_process_gpu = "gpu:1"
+        if num_gpus > 2:
+            self.pre_process_gpu = "gpu:2"
 
     def _load_stats(self):
         print("loading means and covs")
@@ -78,9 +87,11 @@ class MahalProcessor(pp.PostProcessor):
         main_pred = self.outputs_dict[self.model.main_class_predictions_key]
         weights = tf.to_float(get_valid(self.annot, self.ignore_label))
 
-        self._process_logits()
-        self.annot, self.num_classes = self._process_annot(self.annot, main_pred, self.num_classes)
-        self.metrics, self.update = metrics.get_metric_ops(self.annot, self.prediction, weights)
+
+        with tf.device(self.logit_gpu):
+            self._process_logits()
+            self.annot, self.num_classes = self._process_annot(self.annot, main_pred, self.num_classes)
+            self.metrics, self.update = metrics.get_metric_ops(self.annot, self.prediction, weights)
 
     @doc_inherit
     def get_init_feed(self):
@@ -89,10 +100,11 @@ class MahalProcessor(pp.PostProcessor):
 
     @doc_inherit
     def get_preprocessed(self):
-        if self.epsilon > 0.0:
-            self.grads = tf.gradients(self.min_dist, self.image)
-            return self.image - tf.squeeze(self.epsilon*tf.sign(self.grads), 1)
-        return None
+        with tf.device(self.pre_process_gpu):
+            if self.epsilon > 0.0:
+                self.grads = tf.gradients(self.min_dist, self.image)
+                return self.image - tf.squeeze(self.epsilon*tf.sign(self.grads), 1)
+            return None
 
     @doc_inherit
     def get_vars_noload(self):

@@ -3,7 +3,7 @@ from abc import abstractmethod
 
 class PostProcessor(object):
     
-    def __init__(self, name, model, outputs_dict):
+    def __init__(self, name, model, outputs_dict, num_gpus):
         """Create a post processor.
            This is an abstract class that should not be instanciated
         
@@ -15,6 +15,7 @@ class PostProcessor(object):
         self.name = name
         self.model = model
         self.outputs_dict = outputs_dict
+        self.num_gpus = num_gpus
     
     @abstractmethod
     def get_preprocessed(self):

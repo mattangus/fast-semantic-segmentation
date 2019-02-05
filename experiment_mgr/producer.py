@@ -7,32 +7,27 @@ import pickle
 from . import experiment_factory
 from . import db_helper as dbh
 
-# class Experiment(object):
+class Experiment(object):
 
-#     def __init__(self, buffer=None):
-#         self.model_config = None
-#         self.data_config = None
-#         self.trained_checkpoint = None
-#         self.pad_to_shape = None
-#         self.processor_type = None
-#         self.annot_type = None
-#         self.kwargs = None
-#         if buffer is None:
-#             self.print_buffer = StringIO()
-#         else:
-#             self.print_buffer = None
+    def __init__(self, buffer=None):
+        self.model_config = None
+        self.data_config = None
+        self.trained_checkpoint = None
+        self.pad_to_shape = None
+        self.processor_type = None
+        self.annot_type = None
+        self.kwargs = None
+        if buffer is None:
+            self.print_buffer = StringIO()
+        else:
+            self.print_buffer = None
 
-# #transfer from previous method
-# def _upload_from_file(file):
-#     with open(file, "rb") as f:
-#         results = pickle.load(f)
+#transfer from previous method
+def _upload_from_file(file):
+    with open(file, "rb") as f:
+        results = pickle.load(f)
 
-#     dbh._upload_legacy(results)
-
-# _upload_from_file("mahal_res.pkl")
-# _upload_from_file("odin_res.pkl")
-# _upload_from_file("topmahal_res.pkl")
-# _upload_from_file("topodin_res.pkl")
+    dbh._upload_legacy(results)
 
 def launch_experiment(exp, q):
     gpus = q.get()
@@ -44,23 +39,52 @@ def launch_experiment(exp, q):
     q.put(gpus)
     return res
 
-def main():
-    pool = Pool(8)
+def main(gpus):
+    # _upload_from_file("mahal_res.pkl")
+    # _upload_from_file("odin_res.pkl")
+    # _upload_from_file("topmahal_res.pkl")
+    # _upload_from_file("topodin_res.pkl")
+
+    # import pdb; pdb.set_trace()
+    pool = Pool(len(gpus))
     m = Manager()
     gpu_queue = m.Queue()
-    for a in range(8):
+    for a in gpus:
         gpu_queue.put(str(a))
+
+    #TODO: make one gpu debugging better
+    def one_gpu_launch(exp, gpu_queue):
+        return launch_experiment(exp,gpu_queue)
+
+    def one_gpu_get(res):
+        return res
+
+    def multi_gpu_launch(exp, gpu_queue):
+        return pool.apply_async(launch_experiment, (exp, gpu_queue))
+
+    def multi_gpu_get(res):
+        return res.get()
+
+    if len(gpus) == 1:
+        launch = one_gpu_launch
+        get = one_gpu_get
+    else:
+        launch = multi_gpu_launch
+        get = multi_gpu_get
 
     to_run = experiment_factory.get_all_to_run()
     while len(to_run) > 0:
         exp_results = []
         
         for exp in to_run:
-            res = pool.apply_async(launch_experiment, (exp, gpu_queue))
+            res = launch(exp, gpu_queue)
             exp_results.append((exp, res))
 
         for exp, res in exp_results:
-            print_buffer, result, had_error = res.get()
-            dbh.upload_result(exp, print_buffer.getvalue(), result, had_error)
+            print_buffer, result, had_error = get(res)
+            buff = print_buffer.getvalue()
+            dbh.upload_result(exp, buff, result, had_error)
+            if had_error:
+                print(buff)
         
         to_run = experiment_factory.get_all_to_run()

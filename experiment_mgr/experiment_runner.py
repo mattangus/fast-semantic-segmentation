@@ -40,7 +40,7 @@ processor_dict = {
 
 def run_inference_graph(model, trained_checkpoint_prefix,
                         dataset, num_images, ignore_label, pad_to_shape,
-                        num_classes, processor_type, annot_type, **kwargs):
+                        num_classes, processor_type, annot_type, num_gpu, **kwargs):
     batch = 1
 
     dataset = dataset.batch(batch, drop_remainder=True)
@@ -65,7 +65,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     processor = processor_class(model, outputs, num_classes,
                             annot_pl, placeholder_tensor, ignore_label,
-                            process_annot, **kwargs)
+                            process_annot, num_gpu, **kwargs)
 
     # if processor_type == "MaxSoftmax":
     #     processor = MaxSoftmaxProcessor(model, outputs, num_classes,
@@ -93,7 +93,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     print("running for", num_step, "steps")
 
     config = tf.ConfigProto(allow_soft_placement=True)
-    config.gpu_options.allow_growth = True
+    #config.gpu_options.allow_growth = True
     with tf.Session(config=config) as sess:
         init_feed = processor.get_init_feed()
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()],init_feed)
@@ -133,7 +133,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
             elapsed = timeit.default_timer() - start_time
             end = "\r"
-            if idx % 50 == 0:
+            if idx % 1 == 0:
                 #every now and then do regular print
                 end = "\n"
             print('{0:.4f} iter: {1}, {2}'.format(elapsed, idx+1, result), end=end) 
@@ -165,9 +165,11 @@ def run_experiment(gpus, print_buffer, model_config, data_config,
             pipeline_config.model, is_training=False, ignore_label=ignore_label)
         dataset = dataset_builder.build(input_reader, 1)
 
+        num_gpu = len(gpus.split(","))
+
         result = run_inference_graph(segmentation_model, trained_checkpoint, dataset,
                             input_reader.num_examples, ignore_label, pad_to_shape,
-                            num_classes, processor_type, annot_type, **kwargs)
+                            num_classes, processor_type, annot_type, num_gpu, **kwargs)
         had_error = False
     except Exception:
         print(traceback.format_exc())

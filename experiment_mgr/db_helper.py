@@ -147,19 +147,30 @@ def get_top_from_config(config, exclude_fn=None):
     return list(exps)
 
 def upload_result(run_args, print_buffer, result, had_error):
+    values = result
+    if values is None:
+        values = {
+            "auroc": 0,
+            "aupr": 0,
+            "fpr_at_tpr": 0,
+            "detection_error": 0
+        }
+    
     experiment = create_experiment(run_args)
-    if len(experiment.result) > 0:
+    exp_res = list(experiment.result)
+    if len(exp_res) > 0 and not exp_res[0].had_error:
         print("uploading previous result")
         import pdb; pdb.set_trace()
-    else:
-        values = result
-        if values is None:
-            values = {
-                "auroc": 0,
-                "aupr": 0,
-                "fpr_at_tpr": 0,
-                "detection_error": 0
-            }
+    elif len(exp_res) == 1 and exp_res[0].had_error:
+        print("updating result")
+        result = exp_res[0]
+        result.had_error = had_error
+        result.auroc = values["auroc"]
+        result.aupr = values["aupr"]
+        result.fpr_at_tpr = values["fpr_at_tpr"]
+        result.detection_error = values["detection_error"]
+        result.save()
+    elif len(exp_res) == 0:
         print("creating result")
         result = db.Result.create(
             experiment=experiment,
@@ -167,10 +178,13 @@ def upload_result(run_args, print_buffer, result, had_error):
             **values
         )
         db.PrintBuffer.create(value=print_buffer, result=result)
+    else:
+        #can't happen
+        raise Exception("this shouldn't happen")
 
 #transfer from previous method
 def _upload_legacy(results):
     for result in results:
         run_args = result[0]
         print_buffer, result, had_error = result[1]
-        upload_result(run_args, print_buffer, result, had_error)
+        upload_result(run_args, print_buffer.getvalue(), result, had_error)

@@ -12,7 +12,7 @@ def _filter_already_run(arg_list):
         if len(result) > 1:
             print("database has invalid data")
             import pdb; pdb.set_trace()
-        elif len(result) == 0:
+        elif len(result) == 0 or result[0].had_error:
             ret.append(run_args)
     
     return ret
