@@ -142,3 +142,37 @@ class MahalRunBuilder(RunnerBuilder):
     @doc_inherit
     def top_exclude_fn(self, result):
         return False
+
+# class MaxSoftmaxRunBuilder(RunnerBuilder):
+
+#     @doc_inherit
+#     def make_args(self, epsilon, t_value, train=True):
+#         run_args = RunnerArgs()
+#         run_args.model_config = "configs/model/pspnet_full_dim.config"
+#         if train:
+#             run_args.data_config = "configs/data/sun_train.config"
+#         else:
+#             run_args.data_config = "configs/data/sun_eval.config"
+#         run_args.trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
+#         run_args.pad_to_shape = "1025,2049"
+#         run_args.processor_type = "MaxSoftmax"
+#         run_args.annot_type = "ood"
+#         run_args.kwargs = {
+#             "epsilon": epsilon,
+#             "t_value": t_value,
+#         }
+#         return run_args
+
+#     @doc_inherit
+#     def get_train(self):
+#         arg_list = []
+#         for T in [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]:
+#             for epsilon in [0.0, 0.00002, 0.00004, 0.00006, 0.00008, 0.00010, 0.00012, 0.00014, 0.00016, 0.00018, 0.00020, 0.00022, 0.00024, 0.00026, 0.00028, 0.00030, 0.00032, 0.00034, 0.00036, 0.00038, 0.00040]:
+#                 run_args = self.make_args(epsilon, T)
+#                 arg_list.append(run_args)
+#         return arg_list
+    
+#     @doc_inherit
+#     def top_exclude_fn(self, result):
+#         eps = dbh.kwargs_to_dict(list(result.experiment.arg_group.kwargs))["epsilon"]
+#         return eps == 0.0

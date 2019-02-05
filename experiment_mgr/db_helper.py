@@ -161,9 +161,16 @@ def upload_result(run_args, print_buffer, result, had_error):
                 "detection_error": 0
             }
         print("creating result")
-        db.Result.create(
+        result = db.Result.create(
             experiment=experiment,
-            print_buffer=print_buffer,
             had_error=had_error,
             **values
         )
+        db.PrintBuffer.create(value=print_buffer, result=result)
+
+#transfer from previous method
+def _upload_legacy(results):
+    for result in results:
+        run_args = result[0]
+        print_buffer, result, had_error = result[1]
+        upload_result(run_args, print_buffer, result, had_error)

@@ -60,7 +60,6 @@ class Experiment(pw.Model):
 class Result(pw.Model):
     experiment = pw.ForeignKeyField(Experiment, backref='result', primary_key=True)
 
-    print_buffer = pw.TextField()
     auroc = pw.DoubleField(null=False)
     aupr = pw.DoubleField(null=False)
     fpr_at_tpr = pw.DoubleField(null=False)
@@ -70,5 +69,13 @@ class Result(pw.Model):
     class Meta:
         database = db
 
+#keep long text separate so it is not pulled with result
+class PrintBuffer(pw.Model):
+    result = pw.ForeignKeyField(Result, backref='print_buffer', primary_key=True)
+    value = pw.TextField()
+
+    class Meta:
+        database = db
+
 db.connect()
-db.create_tables([ExperimentConfig, ArgsGroup, KeyWordArgs, Experiment, Result])
+db.create_tables([ExperimentConfig, ArgsGroup, KeyWordArgs, Experiment, Result, PrintBuffer])
