@@ -32,6 +32,21 @@ class RunnerArgs(object):
         else:
             self.print_buffer = None
 
+class ExperimentDataset(object):
+
+    def __init__(self, train_set, eval_set=None):
+        self.train_set = train_set
+        self.eval_set = eval_set
+        if eval_set is None:
+            self.eval_set = train_set
+
+#ood
+sun_experiment_set = ExperimentDataset("configs/data/sun_train.config", "configs/data/sun_eval.config")
+normal_experiment_set = ExperimentDataset("configs/data/normal.config", "configs/data/normal.config")
+uniform_experiment_set = ExperimentDataset("configs/data/uniform.config", "configs/data/uniform.config")
+#error
+city_experiment_set = ExperimentDataset("configs/data/cityscapes_train.config", "configs/data/cityscapes_eval.config")
+
 class RunnerBuilder(object):
     
     @abstractmethod
@@ -75,18 +90,23 @@ class RunnerBuilder(object):
 
 class MaxSoftmaxRunBuilder(RunnerBuilder):
 
+    def __init__(self, annot_type, experiment_set):
+        assert annot_type in ["ood", "error"]
+        self.annot_type = annot_type
+        self.experiment_set = experiment_set
+
     @doc_inherit
     def make_args(self, epsilon, t_value, train=True):
         run_args = RunnerArgs()
         run_args.model_config = "configs/model/pspnet_full_dim.config"
         if train:
-            run_args.data_config = "configs/data/sun_train.config"
+            run_args.data_config = self.experiment_set.train_set
         else:
-            run_args.data_config = "configs/data/sun_eval.config"
+            run_args.data_config = self.experiment_set.eval_set
         run_args.trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
         run_args.pad_to_shape = "1025,2049"
         run_args.processor_type = "MaxSoftmax"
-        run_args.annot_type = "ood"
+        run_args.annot_type = self.annot_type
         run_args.kwargs = {
             "epsilon": epsilon,
             "t_value": t_value,
@@ -108,7 +128,12 @@ class MaxSoftmaxRunBuilder(RunnerBuilder):
         return eps == 0.0
 
 class MahalRunBuilder(RunnerBuilder):
-
+    
+    def __init__(self, annot_type, experiment_set):
+        assert annot_type in ["ood", "error"]
+        self.annot_type = annot_type
+        self.experiment_set = experiment_set
+    
     @doc_inherit
     def make_args(self, epsilon,
             eval_dir="remote/eval_logs/resnet_dim/",
@@ -116,13 +141,13 @@ class MahalRunBuilder(RunnerBuilder):
         run_args = RunnerArgs()
         run_args.model_config = "configs/model/pspnet_full_dim.config"
         if train:
-            run_args.data_config = "configs/data/sun_train.config"
+            run_args.data_config = self.experiment_set.train_set
         else:
-            run_args.data_config = "configs/data/sun_eval.config"
+            run_args.data_config = self.experiment_set.eval_set
         run_args.trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
         run_args.pad_to_shape = "1025,2049"
         run_args.processor_type = "Mahal"
-        run_args.annot_type = "ood"
+        run_args.annot_type = self.annot_type
         run_args.kwargs = {
             "epsilon": epsilon,
             "eval_dir": eval_dir,

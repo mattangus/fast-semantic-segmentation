@@ -23,6 +23,10 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
         self.ignore_label = ignore_label
         self._process_annot = process_annot
 
+        self.pre_process_gpu = "gpu:0"
+        if num_gpus > 1:
+            self.pre_process_gpu = "gpu:1"
+
     @doc_inherit
     def post_process_ops(self):
         main_pred = self.outputs_dict[self.model.main_class_predictions_key]
@@ -42,10 +46,11 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
         
     @doc_inherit
     def get_preprocessed(self):
-        if self.epsilon > 0.0:
-            self.grads = tf.gradients(self.prediction, self.image)
-            return self.image - tf.squeeze(self.epsilon*tf.sign(self.grads), 1)
-        return None
+        with tf.device(self.pre_process_gpu):
+            if self.epsilon > 0.0:
+                self.grads = tf.gradients(self.prediction, self.image)
+                return self.image - tf.squeeze(self.epsilon*tf.sign(self.grads), 1)
+            return None
 
     @doc_inherit
     def get_vars_noload(self):

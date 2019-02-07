@@ -84,7 +84,7 @@ def main(gpus):
             print_buffer, result, had_error = get(res)
             buff = print_buffer.getvalue()
             dbh.upload_result(exp, buff, result, had_error)
-            if had_error:
-                print(buff)
+            # if had_error:
+            #     print(buff)
         
         to_run = experiment_factory.get_all_to_run()
