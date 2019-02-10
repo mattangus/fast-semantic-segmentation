@@ -116,10 +116,6 @@ class PSPNetArchitecture(model.SegmentationModel):
                 
                 unscaled_logits = predictions
 
-                if self._train_reduce:
-                    predictions_no_resize = final_logits
-                else:
-                    predictions_no_resize = predictions
                 if not self._is_training: # evaluation
                     predictions = self._dynamic_interpolation(
                             predictions, z_factor=8.0)

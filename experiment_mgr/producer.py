@@ -29,17 +29,17 @@ def _upload_from_file(file):
 
     dbh._upload_legacy(results)
 
-def launch_experiment(exp, q):
+def launch_experiment(exp, q, is_debug):
     gpus = q.get()
     print("launching", exp.kwargs, "gpu", gpus)
     res = experiment_runner.run_experiment(gpus, exp.print_buffer, exp.model_config, exp.data_config,
                     exp.trained_checkpoint, exp.pad_to_shape,
-                    exp.processor_type, exp.annot_type, **exp.kwargs)
+                    exp.processor_type, exp.annot_type, is_debug, **exp.kwargs)
     print("adding", gpus)
     q.put(gpus)
     return res
 
-def main(gpus):
+def main(gpus, is_debug):
     # _upload_from_file("mahal_res.pkl")
     # _upload_from_file("odin_res.pkl")
     # _upload_from_file("topmahal_res.pkl")
@@ -53,19 +53,19 @@ def main(gpus):
         gpu_queue.put(str(a))
 
     #TODO: make one gpu debugging better
-    def one_gpu_launch(exp, gpu_queue):
-        return launch_experiment(exp,gpu_queue)
+    def one_gpu_launch(exp, gpu_queue, is_debug):
+        return launch_experiment(exp,gpu_queue,is_debug)
 
     def one_gpu_get(res):
         return res
 
-    def multi_gpu_launch(exp, gpu_queue):
-        return pool.apply_async(launch_experiment, (exp, gpu_queue))
+    def multi_gpu_launch(exp, gpu_queue, is_debug):
+        return pool.apply_async(launch_experiment, (exp, gpu_queue,is_debug))
 
     def multi_gpu_get(res):
         return res.get()
 
-    if len(gpus) == 1:
+    if len(gpus) == 1 or is_debug:
         launch = one_gpu_launch
         get = one_gpu_get
     else:
@@ -77,7 +77,7 @@ def main(gpus):
         exp_results = []
         
         for exp in to_run:
-            res = launch(exp, gpu_queue)
+            res = launch(exp, gpu_queue, is_debug)
             exp_results.append((exp, res))
 
         for exp, res in exp_results:

@@ -25,7 +25,11 @@ def create_evaluation_input(create_input_dict_fn,
                             input_height,
                             input_width,
                             cropped_eval=False):
-    input_dict = create_input_dict_fn()
+    dataset = create_input_dict_fn(num_epoch=0)
+    def to_float(input_dict):
+        input_dict[dataset_builder._IMAGE_FIELD] = tf.to_float(input_dict[dataset_builder._IMAGE_FIELD])
+        input_dict[dataset_builder._LABEL_FIELD] = tf.to_float(input_dict[dataset_builder._LABEL_FIELD])
+        return input_dict
     if cropped_eval:
         # We evaluate on a random cropped of the validation set.
         # cropper_fn = functools.partial(preprocessor.random_crop,
@@ -35,31 +39,39 @@ def create_evaluation_input(create_input_dict_fn,
         #         input_dict, func_list=[cropper_fn])
         # processed_labels = tf.to_float(
         #     output_dict[dataset_builder._LABEL_FIELD])
-        processed_images = tf.to_float(input_dict[dataset_builder._IMAGE_FIELD])
-        #sliding_window.extract_patches(input_dict[dataset_builder._IMAGE_FIELD], input_width, input_height)
-        processed_labels = tf.to_float(input_dict[dataset_builder._LABEL_FIELD])
+        # processed_images = tf.to_float(input_dict[dataset_builder._IMAGE_FIELD])
+        # #sliding_window.extract_patches(input_dict[dataset_builder._IMAGE_FIELD], input_width, input_height)
+        # processed_labels = tf.to_float(input_dict[dataset_builder._LABEL_FIELD])
         #sliding_window.extract_patches(input_dict[dataset_builder._LABEL_FIELD], input_width, input_height)
+        dataset = dataset.map(to_float)
     else:
         # Here we only pad input image, then we shrink back the prediction
         padding_fn = functools.partial(preprocessor.pad_to_specific_size,
                         height_to_set=input_height,
                         width_to_set=input_width)
-        output_dict = preprocessor.preprocess_runner(
-                input_dict, skip_labels=True, func_list=[padding_fn])
-        processed_labels = tf.to_float(input_dict[dataset_builder._LABEL_FIELD])
-
-        processed_images = tf.to_float(output_dict[dataset_builder._IMAGE_FIELD])
-    return processed_images, processed_labels
+        def pre_process(input_dict):
+            output_dict = preprocessor.preprocess_runner(
+                    input_dict, skip_labels=True, func_list=[padding_fn])
+            input_dict[dataset_builder._IMAGE_FIELD] = output_dict[dataset_builder._IMAGE_FIELD]
+            return input_dict
+        
+        dataset = dataset.map(pre_process)
+        dataset = dataset.map(to_float)
+    return dataset
 
 
 def create_predictions_and_labels(model, create_input_dict_fn,
                                  input_height, input_width, cropped_eval,
-                                 eval_dir=None):
-    eval_input_pair = create_evaluation_input(
+                                 eval_dir=None, num_extra_class=0):
+    dataset = create_evaluation_input(
         create_input_dict_fn, input_height, input_width, cropped_eval)
+    
     # Setup a queue for feeding to slim evaluation helpers
-    input_queue = prefetch_queue.prefetch_queue(eval_input_pair)
-    eval_images, eval_labels = input_queue.dequeue()
+    data_iterator = dataset.make_one_shot_iterator()
+    input_dict = data_iterator.get_next()
+    eval_images = input_dict[dataset_builder._IMAGE_FIELD]
+    eval_labels = input_dict[dataset_builder._LABEL_FIELD]
+
     eval_labels = tf.expand_dims(eval_labels, 0)
     eval_images = tf.stack([eval_images, tf.image.flip_left_right(eval_images)])
     #eval_images = tf.expand_dims(eval_images, 0)
@@ -96,6 +108,8 @@ def create_predictions_and_labels(model, create_input_dict_fn,
         model_scores = sliding_window.merge_patches(target, model_scores, input_height, input_width)
         print("Done merging!")
         output_dict[model.main_class_predictions_key] = model_scores
+    if num_extra_class != 0:
+        model_scores = model_scores[...,:-num_extra_class]
     eval_predictions = tf.argmax(model_scores, 3)
     eval_predictions = tf.expand_dims(eval_predictions, -1)
 
@@ -121,7 +135,9 @@ def eval_segmentation_model_once(checkpoint_path,
                                  create_input_fn,
                                  input_dimensions,
                                  eval_config,
+                                 input_reader,
                                  eval_dir,
+                                 num_extra_class=0,
                                  cropped_evaluation=False,
                                  image_summaries=False,
                                  verbose=False):
@@ -130,6 +146,8 @@ def eval_segmentation_model_once(checkpoint_path,
         create_input_fn,
         input_dimensions,
         eval_config,
+        num_extra_class=num_extra_class,
+        input_reader=input_reader,
         train_dir=None,
         eval_dir=eval_dir,
         cropped_evaluation=cropped_evaluation,
@@ -157,13 +175,14 @@ def eval_segmentation_model(create_model_fn,
                             create_input_fn,
                             input_dimensions,
                             eval_config,
+                            input_reader,
                             train_dir,
                             eval_dir,
+                            num_extra_class=0,
                             cropped_evaluation=False,
                             evaluate_single_checkpoint=None,
                             image_summaries=False,
                             verbose=False):
-    ignore_label = eval_config.ignore_label
     num_classes, segmentation_model = create_model_fn()
 
     input_height, input_width = input_dimensions
@@ -174,7 +193,8 @@ def eval_segmentation_model(create_model_fn,
                 input_height=input_height,
                 input_width=input_width,
                 cropped_eval=cropped_evaluation,
-                eval_dir=eval_dir)
+                eval_dir=eval_dir,
+                num_extra_class=num_extra_class)
     variables_to_restore = tf.global_variables()
     global_step = tf.train.get_or_create_global_step()
     variables_to_restore.append(global_step)
@@ -183,7 +203,7 @@ def eval_segmentation_model(create_model_fn,
     flattened_predictions = tf.reshape(predictions_for_eval, shape=[-1])
     flattened_labels = tf.reshape(labels_for_eval, shape=[-1])
 
-    ne = [tf.not_equal(flattened_labels, il) for il in ignore_label]
+    ne = [tf.not_equal(flattened_labels, il) for il in input_reader.ignore_label]
     neg_validity_mask = ne.pop(0)
     for v in ne:
         neg_validity_mask = tf.logical_and(neg_validity_mask, v)
@@ -238,9 +258,9 @@ def eval_segmentation_model(create_model_fn,
     summary_op = tf.summary.merge_all()
 
     tf.logging.info('Evaluating over %d samples...',
-                    eval_config.num_examples)
+                    input_reader.num_examples)
 
-    total_eval_examples = eval_config.num_examples
+    total_eval_examples = input_reader.num_examples
     if evaluate_single_checkpoint:
         curr_checkpoint = evaluate_single_checkpoint 
         metric_results = slim.evaluation.evaluate_once(

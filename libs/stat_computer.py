@@ -15,6 +15,10 @@ class StatComputer(ABC):
         pass
     
     @abstractmethod
+    def get_reset_op(self):
+        pass
+
+    @abstractmethod
     def save_variable(self, sess, stat_dir):
         pass
     
@@ -29,12 +33,15 @@ class MeanComputer(StatComputer):
         self.weights = weights
 
         with tf.variable_scope("MeanComputer"):
-            self.mean, self.update = streaming_mean(self.values, self.weights, True)
+            (self.mean, self.mean_ref), self.update = streaming_mean(self.values, self.weights, True)
             self.mean = tf.expand_dims(self.mean,0)
     
     def get_update_op(self):
         return self.update
     
+    def get_reset_op(self):
+        return tf.assign(self.mean_ref, tf.zeros_like(self.mean_ref))
+
     def get_variable(self, sess):
         mean_value = sess.run(self.mean)
         if np.isnan(mean_value).any():
@@ -67,6 +74,9 @@ class CovComputer(StatComputer):
     def get_update_op(self):
         return tf.group([self.chol_update, self.count_update])
     
+    def get_reset_op(self):
+        return tf.group([tf.variables_initializer(self.chol), tf.variables_initializer(self.count)])
+
     def get_variable(self, sess):
         def inv_fn(chol_mat, counts):
             cov = tf.matmul(tf.transpose(chol_mat,[0,2,1]),chol_mat)

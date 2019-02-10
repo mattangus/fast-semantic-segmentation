@@ -29,11 +29,10 @@ prefetch_queue = slim.prefetch_queue
 def create_training_input(create_input_fn,
                           preprocess_fn,
                           batch_size,
-                          batch_queue_capacity,
-                          batch_queue_threads,
-                          prefetch_queue_capacity):
+                          num_clones):
 
-    tensor_dict = create_input_fn()
+    #repeat forever
+    dataset = create_input_fn(num_epoch=0)
     
     def cast_and_reshape(tensor_dict, dicy_key):
         items = tensor_dict[dicy_key]
@@ -41,23 +40,22 @@ def create_training_input(create_input_fn,
         tensor_dict[dicy_key] = float_images
         return tensor_dict
 
-    tensor_dict = cast_and_reshape(tensor_dict,
-                    dataset_builder._IMAGE_FIELD)
+    dataset = dataset.map(lambda x: cast_and_reshape(x,
+                                    dataset_builder._IMAGE_FIELD))
 
     if preprocess_fn is not None:
         preprocessor = preprocess_fn()
-        tensor_dict = preprocessor(tensor_dict)
+        dataset = dataset.map(preprocessor, 10)
 
-    batched_tensors = tf.train.batch(tensor_dict,
-        batch_size=batch_size, num_threads=batch_queue_threads,
-        capacity=batch_queue_capacity, dynamic_pad=True)
+    dataset = dataset.prefetch(batch_size*num_clones)
 
-    return prefetch_queue.prefetch_queue(batched_tensors,
-        capacity=prefetch_queue_capacity,
-        dynamic_pad=False)
+    dataset = dataset.batch(batch_size, drop_remainder=True)
+    #dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(batch_size))
+
+    return dataset
 
 
-def create_training_model_losses(input_queue, create_model_fn, train_config,
+def create_training_model_losses(input_fn, create_model_fn, train_config,
                                  train_dir=None, gradient_checkpoints=None, clone_scope=None):
 
     tf.logging.info('Creating clone %s', clone_scope)
@@ -69,24 +67,27 @@ def create_training_model_losses(input_queue, create_model_fn, train_config,
         tf.contrib.quantize.create_training_graph(
             quant_delay=train_config.quantize_with_delay)
 
-    read_data_list = input_queue.dequeue()
+    read_data_list = input_fn()
+    
     def extract_images_and_targets(read_data):
         images = read_data[dataset_builder._IMAGE_FIELD]
         labels = read_data[dataset_builder._LABEL_FIELD]
         return (images, labels)
 
-    (images, labels) = zip(*map(extract_images_and_targets, [read_data_list]))
+    (images, labels) = extract_images_and_targets(read_data_list)
     
     #labels = tf.Print(labels, ["labels max", tf.reduce_max(labels)])
 
     # Incase we need to do zero centering, we do it here
-    preprocessed_images = []
-    for image in images:
-        resized_image = segmentation_model.preprocess(image)
-        preprocessed_images.append(resized_image)
-    images = tf.concat(preprocessed_images, 0, name="Inputs")
+    # preprocessed_images = []
+    # for image in images:
+    #     resized_image = segmentation_model.preprocess(image)
+    #     preprocessed_images.append(resized_image)
+    # images = tf.concat(preprocessed_images, 0, name="Inputs")
+    images = segmentation_model.preprocess(images)
+    images = tf.identity(images, name="Inputs")
 
-    segmentation_model.provide_groundtruth(labels[0])
+    segmentation_model.provide_groundtruth(labels)
     prediction_dict = segmentation_model.predict(images)
 
     # Add checkpointing nodes to correct collection
@@ -104,38 +105,6 @@ def create_training_model_losses(input_queue, create_model_fn, train_config,
     losses_dict = segmentation_model.loss(prediction_dict)
     for loss_tensor in losses_dict.values():
         tf.losses.add_loss(loss_tensor)
-
-def do_back(op):
-    result = list(seed_ops)
-    wave = set(seed_ops)
-    while wave:
-        new_wave = set()
-        for op in wave:
-            for new_t in op.inputs:
-                if new_t in stop_at_ts:
-                    continue
-                if new_t.op not in result and is_within(new_t.op):
-                    new_wave.add(new_t.op)
-        util.concatenate_unique(result, new_wave)
-        wave = new_wave
-    
-    # q = queue.Queue()
-    # q.put(ge.sgv(op))
-
-    # import pdb; pdb.set_trace()
-    # res = []
-
-    # while not q.empty():
-    #     cur = q.get_nowait()
-        
-    #     ins = list(cur.inputs)
-
-    #     for it in ins:
-    #         q.put_nowait(ge.sgv(it))
-    #         res.append(it)
-    
-    import pdb; pdb.set_trace()
-    print("done")
 
 def my_add_check_numerics_ops():
     """Connect a `check_numerics` to every floating point tensor.
@@ -212,14 +181,12 @@ def train_segmentation_model(create_model_fn,
             global_step = tf.train.get_or_create_global_step()
 
         with tf.device(deploy_config.inputs_device()): # CPU of each worker
-            input_queue = create_training_input(
+            dataset = create_training_input(
                 create_input_fn,
                 preprocess_fn,
                 per_clone_batch_size,
-                batch_queue_capacity=train_config.batch_queue_capacity,
-                batch_queue_threads=train_config.num_batch_queue_threads,
-                prefetch_queue_capacity=train_config.prefetch_queue_capacity)
-
+                num_clones)
+            data_iterator = dataset.make_one_shot_iterator()
         # Create the global step on the device storing the variables.
         with tf.device(deploy_config.variables_device()):
             # Note: it is assumed that any loss created by `model_fn`
@@ -230,7 +197,7 @@ def train_segmentation_model(create_model_fn,
                                     train_dir=train_dir,
                                     gradient_checkpoints=gradient_checkpoints)
             clones = model_deploy.create_clones(deploy_config,
-                model_fn, [input_queue])
+                model_fn, [data_iterator.get_next])
             first_clone_scope = deploy_config.clone_scope(0)
 
             if sync_bn_accross_gpu:
@@ -278,6 +245,9 @@ def train_segmentation_model(create_model_fn,
 
             variables_to_restore = segmentation_model.restore_map(train_config.fine_tune_checkpoint,
               fine_tune_checkpoint_type=train_config.fine_tune_checkpoint_type)
+
+            writer = tf.summary.FileWriter(train_dir)
+            writer.close()
 
             init_fn = slim.assign_from_checkpoint_fn(
                         train_config.fine_tune_checkpoint,

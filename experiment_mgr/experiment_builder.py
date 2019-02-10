@@ -168,6 +168,38 @@ class MahalRunBuilder(RunnerBuilder):
     def top_exclude_fn(self, result):
         return False
 
+class DropoutRunBuilder(RunnerBuilder):
+
+    def __init__(self, annot_type, experiment_set):
+        assert annot_type in ["ood", "error"]
+        self.annot_type = annot_type
+        self.experiment_set = experiment_set
+
+    @doc_inherit
+    def make_args(self, num_runs, train=True):
+        run_args = RunnerArgs()
+        run_args.model_config = "configs/model/pspnet_dropout.config"
+        if train:
+            run_args.data_config = self.experiment_set.train_set
+        else:
+            run_args.data_config = self.experiment_set.eval_set
+        run_args.trained_checkpoint = "remote/train_logs/dropout/model.ckpt-31273"
+        run_args.pad_to_shape = "1025,2049"
+        run_args.processor_type = "Dropout"
+        run_args.annot_type = self.annot_type
+        run_args.kwargs = {
+            "num_runs": num_runs,
+        }
+        return run_args
+
+    @doc_inherit
+    def get_train(self):
+        return [self.make_args(n) for n in [4, 6, 8]]
+    
+    @doc_inherit
+    def top_exclude_fn(self, result):
+        return False
+
 # class MaxSoftmaxRunBuilder(RunnerBuilder):
 
 #     @doc_inherit

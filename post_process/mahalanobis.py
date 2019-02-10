@@ -11,7 +11,7 @@ class MahalProcessor(pp.PostProcessor):
 
     def __init__(self, model, outputs_dict, num_classes,
                     annot, image, ignore_label, process_annot,
-                    num_gpus,
+                    num_gpus,batch_size,
                     #class specific
                     eval_dir, epsilon, global_cov, global_mean):
         super().__init__("Mahal", model, outputs_dict, num_gpus)

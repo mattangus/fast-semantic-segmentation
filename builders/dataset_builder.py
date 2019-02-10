@@ -147,7 +147,7 @@ def build(input_reader_config, num_epoch):
         sar_fn = tf.data.experimental.shuffle_and_repeat
         sar = sar_fn(input_reader_config.queue_capacity,
                         epochs, seed=_DATASET_SHUFFLE_SEED)
-        dataset.apply(sar)
+        dataset = dataset.apply(sar)
         print("shuffle seed:", _DATASET_SHUFFLE_SEED)
     else:
         dataset = dataset.repeat(epochs)

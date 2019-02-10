@@ -15,6 +15,7 @@ message ClassificationLoss {
     oneof loss_type {
         SoftmaxClassificationLoss softmax = 1;
         FocalClassificationLoss focal = 2;
+        SoftmaxConfidenceLoss confidence = 3;
     }
 }
 
@@ -27,6 +28,8 @@ message DistLoss {
 }
 
 message SoftmaxClassificationLoss {}
+
+message SoftmaxConfidenceLoss {}
 
 message FocalClassificationLoss {}
 

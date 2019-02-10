@@ -18,9 +18,10 @@ PSPNET_ICNET_FEATURE_EXTRACTER = {
     'dilated_resnet200':
         pspnet_icnet_resnet_v1.PSPNetICNetDilatedResnet200FeatureExtractor,
     'dilated_mobilenet':
-        pspnet_icnet_mobilenet_v2.PSPNetICNetMobilenetFeatureExtractor
+        pspnet_icnet_mobilenet_v2.PSPNetICNetMobilenetFeatureExtractor,
+    "dropout_resnet50":
+        pspnet_icnet_resnet_v1.DropoutResnet50FeatureExtractor,
 }
-
 
 def _build_pspnet_icnet_extractor(
         feature_extractor_config, filter_scale, is_training,

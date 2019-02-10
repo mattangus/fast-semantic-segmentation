@@ -17,6 +17,7 @@ import traceback
 from builders import model_builder, dataset_builder
 from post_process.mahalanobis import MahalProcessor
 from post_process.max_softmax import MaxSoftmaxProcessor
+from post_process.droput import DropoutProcessor
 from protos.config_reader import read_config
 from libs.exporter import deploy_segmentation_inference_graph
 
@@ -36,6 +37,7 @@ annot_dict = {
 processor_dict = {
     "Mahal": MahalProcessor,
     "MaxSoftmax": MaxSoftmaxProcessor,
+    "Dropout": DropoutProcessor,
 }
 
 def run_inference_graph(model, trained_checkpoint_prefix,
@@ -52,10 +54,12 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     annot_tensor = input_dict[dataset_builder._LABEL_FIELD]
     input_name = input_dict[dataset_builder._IMAGE_NAME_FIELD]
 
-    annot_pl = tf.placeholder(tf.float32, annot_tensor.get_shape().as_list(), name="annot_pl")
+    input_shape = [None] + input_tensor.shape.as_list()[1:]
+
+    annot_pl = tf.placeholder(tf.float32, annot_tensor.shape.as_list(), name="annot_pl")
     outputs, placeholder_tensor = deploy_segmentation_inference_graph(
         model=model,
-        input_shape=input_tensor.shape.as_list(),
+        input_shape=input_shape,
         #input=input_tensor,
         pad_to_shape=pad_to_shape,
         input_type=tf.float32)
@@ -65,7 +69,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     processor = processor_class(model, outputs, num_classes,
                             annot_pl, placeholder_tensor, ignore_label,
-                            process_annot, num_gpu, **kwargs)
+                            process_annot, num_gpu, batch, **kwargs)
 
     # if processor_type == "MaxSoftmax":
     #     processor = MaxSoftmaxProcessor(model, outputs, num_classes,
@@ -127,6 +131,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
             res = {}
             for f in fetch:
+                print("running", f)
                 res.update(sess.run(f, feed_dict))
 
             result = processor.post_process(res)
@@ -143,12 +148,13 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
 def run_experiment(gpus, print_buffer, model_config, data_config,
                     trained_checkpoint, pad_to_shape,
-                    processor_type, annot_type, **kwargs):
+                    processor_type, annot_type, is_debug, **kwargs):
     had_error = None
     try:
         os.environ["CUDA_VISIBLE_DEVICES"] = gpus
-        sys.stdout = print_buffer
-        sys.stderr = print_buffer
+        if not is_debug:
+            sys.stdout = print_buffer
+            sys.stderr = print_buffer
 
         pipeline_config = read_config(model_config, data_config)
 
@@ -171,7 +177,9 @@ def run_experiment(gpus, print_buffer, model_config, data_config,
                             input_reader.num_examples, ignore_label, pad_to_shape,
                             num_classes, processor_type, annot_type, num_gpu, **kwargs)
         had_error = False
-    except Exception:
+    except Exception as ex:
+        if is_debug:
+            raise ex
         print(traceback.format_exc())
         had_error = True
         result = None
