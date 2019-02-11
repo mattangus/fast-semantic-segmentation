@@ -200,6 +200,42 @@ class DropoutRunBuilder(RunnerBuilder):
     def top_exclude_fn(self, result):
         return False
 
+class ConfidenceRunBuilder(RunnerBuilder):
+
+    def __init__(self, annot_type, experiment_set):
+        assert annot_type in ["ood", "error"]
+        self.annot_type = annot_type
+        self.experiment_set = experiment_set
+
+    @doc_inherit
+    def make_args(self, epsilon, train=True):
+        run_args = RunnerArgs()
+        run_args.model_config = "configs/model/pspnet_confidence.config"
+        if train:
+            run_args.data_config = self.experiment_set.train_set
+        else:
+            run_args.data_config = self.experiment_set.eval_set
+        run_args.trained_checkpoint = "remote/train_logs/confidence/model.ckpt-13062"
+        run_args.pad_to_shape = "1025,2049"
+        run_args.processor_type = "Confidence"
+        run_args.annot_type = self.annot_type
+        run_args.kwargs = {
+            "epsilon": epsilon,
+        }
+        return run_args
+
+    @doc_inherit
+    def get_train(self):
+        arg_list = []
+        for epsilon in [0.0, 0.00002, 0.00004, 0.00006, 0.00008, 0.00010, 0.00012, 0.00014, 0.00016, 0.00018, 0.00020, 0.00022, 0.00024, 0.00026, 0.00028, 0.00030, 0.00032, 0.00034, 0.00036, 0.00038, 0.00040]:
+            run_args = self.make_args(epsilon)
+            arg_list.append(run_args)
+        return arg_list
+    
+    @doc_inherit
+    def top_exclude_fn(self, result):
+        return False
+
 # class MaxSoftmaxRunBuilder(RunnerBuilder):
 
 #     @doc_inherit

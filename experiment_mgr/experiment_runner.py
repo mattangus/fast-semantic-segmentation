@@ -18,6 +18,7 @@ from builders import model_builder, dataset_builder
 from post_process.mahalanobis import MahalProcessor
 from post_process.max_softmax import MaxSoftmaxProcessor
 from post_process.droput import DropoutProcessor
+from post_process.confidence import ConfidenceProcessor
 from protos.config_reader import read_config
 from libs.exporter import deploy_segmentation_inference_graph
 
@@ -38,6 +39,7 @@ processor_dict = {
     "Mahal": MahalProcessor,
     "MaxSoftmax": MaxSoftmaxProcessor,
     "Dropout": DropoutProcessor,
+    "Confidence": ConfidenceProcessor,
 }
 
 def run_inference_graph(model, trained_checkpoint_prefix,
@@ -164,7 +166,7 @@ def run_experiment(gpus, print_buffer, model_config, data_config,
                     for dim in pad_to_shape.split(',')]
 
         input_reader = pipeline_config.input_reader
-        input_reader.shuffle = True
+        input_reader.shuffle = False
         ignore_label = input_reader.ignore_label
 
         num_classes, segmentation_model = model_builder.build(
