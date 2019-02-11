@@ -96,9 +96,10 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     feed = processor.get_feed_dict()
 
     num_step = num_images // batch
-    print("running for", num_step, "steps")
 
     config = tf.ConfigProto(allow_soft_placement=True)
+    config.gpu_options.per_process_gpu_memory_fraction=1.
+    run_options = tf.RunOptions(report_tensor_allocations_upon_oom = True)
     #config.gpu_options.allow_growth = True
     with tf.Session(config=config) as sess:
         init_feed = processor.get_init_feed()
@@ -109,6 +110,11 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         saver = tf.train.Saver(vars_toload)
         saver.restore(sess, trained_checkpoint_prefix)
 
+        print("finalizing graph")
+
+        sess.graph.finalize()
+
+        print("running for", num_step, "steps")
         for idx in range(num_step):
 
             start_time = timeit.default_timer()
@@ -133,8 +139,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
             res = {}
             for f in fetch:
-                print("running", f)
-                res.update(sess.run(f, feed_dict))
+                #print("running", f)
+                res.update(sess.run(f, feed_dict, options=run_options))
 
             result = processor.post_process(res)
 
@@ -166,7 +172,7 @@ def run_experiment(gpus, print_buffer, model_config, data_config,
                     for dim in pad_to_shape.split(',')]
 
         input_reader = pipeline_config.input_reader
-        input_reader.shuffle = False
+        input_reader.shuffle = True
         ignore_label = input_reader.ignore_label
 
         num_classes, segmentation_model = model_builder.build(

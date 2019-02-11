@@ -142,7 +142,7 @@ def build(input_reader_config, num_epoch):
     else:
         dataset = _build_random(input_reader_config)
     epochs = num_epoch if num_epoch > 0 else None
-    
+
     if input_reader_config.shuffle:
         sar_fn = tf.data.experimental.shuffle_and_repeat
         sar = sar_fn(input_reader_config.queue_capacity,
