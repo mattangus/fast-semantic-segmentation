@@ -114,6 +114,10 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
         sess.graph.finalize()
 
+        # temp_fw = tf.summary.FileWriter("temptb", graph=sess.graph)
+        # temp_fw.flush()
+        # temp_fw.close()
+
         print("running for", num_step, "steps")
         for idx in range(num_step):
 
@@ -172,17 +176,20 @@ def run_experiment(gpus, print_buffer, model_config, data_config,
                     for dim in pad_to_shape.split(',')]
 
         input_reader = pipeline_config.input_reader
-        input_reader.shuffle = True
+        input_reader.shuffle = False
         ignore_label = input_reader.ignore_label
 
         num_classes, segmentation_model = model_builder.build(
             pipeline_config.model, is_training=False, ignore_label=ignore_label)
-        dataset = dataset_builder.build(input_reader, 1)
+        with tf.device("cpu:0"):
+            dataset = dataset_builder.build(input_reader, 1)
 
         num_gpu = len(gpus.split(","))
 
+        num_examples = sum([r.num_examples for r in input_reader.tf_record_input_reader])
+
         result = run_inference_graph(segmentation_model, trained_checkpoint, dataset,
-                            input_reader.num_examples, ignore_label, pad_to_shape,
+                            num_examples, ignore_label, pad_to_shape,
                             num_classes, processor_type, annot_type, num_gpu, **kwargs)
         had_error = False
     except Exception as ex:

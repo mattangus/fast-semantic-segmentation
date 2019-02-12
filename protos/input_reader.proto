@@ -7,15 +7,15 @@ message InputReader {
     optional uint32 queue_capacity = 2 [default=200];
     optional int32 prefetch_queue_capacity = 3 [default=5];
     optional uint32 num_readers = 4 [default=32];
-    optional TFRecordInputReader tf_record_input_reader = 5;
-    optional uint32 num_examples = 6;
-    required uint32 height = 7;
-    required uint32 width = 8;
-    optional uint32 rheight = 9;
-    optional uint32 rwidth = 10;
+    repeated TFRecordInputReader tf_record_input_reader = 5;
     repeated uint32 ignore_label = 11;
 }
 
 message TFRecordInputReader {
-    repeated string input_path = 1;
+    required string input_path = 1;
+    required uint32 num_examples = 6;
+    required uint32 height = 7;
+    required uint32 width = 8;
+    optional uint32 rheight = 9;
+    optional uint32 rwidth = 10;
 }

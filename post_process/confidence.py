@@ -20,18 +20,18 @@ class ConfidenceProcessor(pp.PostProcessor):
                     num_gpus, batch_size,
                     #class specific
                     epsilon):
-        super().__init__("Dropout", model, outputs_dict, num_gpus)
+        super().__init__("Confidence", model, outputs_dict, num_gpus)
         self.num_classes = num_classes - 1
         self.annot = annot
         self.image = image
-        self._epsilon = epsilon
+        self.epsilon = epsilon
         self.ignore_label = ignore_label
         self._process_annot = process_annot
         self._batch_size = batch_size
 
-        self.metric_gpu = "gpu:0"
+        self.pre_process_gpu = "gpu:0"
         if self.num_gpus > 1:
-            self.metric_gpu = "gpu:1"
+            self.pre_process_gpu = "gpu:1"
 
     def _dot_fn(self, x):
         return tf.squeeze(tf.matmul(tf.expand_dims(x,-2), tf.expand_dims(x,-1)),-1)
@@ -51,9 +51,12 @@ class ConfidenceProcessor(pp.PostProcessor):
 
         conf_logits = tf.image.resize_bilinear(unscaled_logits[...,-1:], pred_shape[1:3])
 
+        tf.image.resize_bilinear(unscaled_logits[...,:-1], pred_shape[1:3])
+
         self.uncertainty = 1. - tf.nn.sigmoid(conf_logits)
 
-        self.metrics, self.update = metrics.get_metric_ops(self.annot, self.uncertainty, self.weights)
+        with tf.device(self.pre_process_gpu):
+            self.metrics, self.update = metrics.get_metric_ops(self.annot, self.uncertainty, self.weights)
 
     @doc_inherit
     def get_init_feed(self):
@@ -61,7 +64,11 @@ class ConfidenceProcessor(pp.PostProcessor):
 
     @doc_inherit
     def get_preprocessed(self):
-        return None
+        with tf.device(self.pre_process_gpu):
+            if self.epsilon > 0.0:
+                    self.grads = tf.gradients(self.uncertainty, self.image)
+                    return self.image - tf.squeeze(self.epsilon*tf.sign(self.grads), 1)
+            return None
 
     @doc_inherit
     def get_vars_noload(self):

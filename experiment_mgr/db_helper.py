@@ -64,6 +64,14 @@ def create_args_group(run_args):
                 )
             )
 
+    subquery = (db.ArgsGroup
+                .select(db.ArgsGroup, pw.fn.COUNT(db.ArgsGroup.id).alias('num'))
+                .join(db.KeyWordArgs)
+                .group_by(db.ArgsGroup.id))
+
+    ids = [ag for ag in subquery if ag.num == len(items)]
+    query = query.where(db.KeyWordArgs.group.in_(ids))
+
     kwargs = list(query)
 
     if len(kwargs) == 0:

@@ -3,6 +3,7 @@ from multiprocessing import Process, Pool, Manager
 from io import StringIO
 from functools import partial
 import pickle
+import tqdm
 
 from . import experiment_factory
 from . import db_helper as dbh
@@ -80,7 +81,7 @@ def main(gpus, is_debug):
             res = launch(exp, gpu_queue, is_debug)
             exp_results.append((exp, res))
 
-        for exp, res in exp_results:
+        for exp, res in tqdm.tqdm(exp_results):
             print_buffer, result, had_error = get(res)
             buff = print_buffer.getvalue()
             dbh.upload_result(exp, buff, result, had_error)

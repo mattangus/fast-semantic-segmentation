@@ -29,6 +29,10 @@ class DropoutProcessor(pp.PostProcessor):
         self._process_annot = process_annot
         self._batch_size = batch_size
 
+        self.pre_process_gpu = "gpu:0"
+        if self.num_gpus > 1:
+            self.pre_process_gpu = "gpu:1"
+
     def _dot_fn(self, x):
         return tf.squeeze(tf.matmul(tf.expand_dims(x,-2), tf.expand_dims(x,-1)),-1)
 
@@ -38,58 +42,32 @@ class DropoutProcessor(pp.PostProcessor):
         unscaled_logits = self.outputs_dict[self.model.unscaled_logits_key]
         pred_shape = main_pred.shape.as_list()
 
-        weights = tf.to_float(get_valid(self.annot, self.ignore_label))
-        self.annot, self.num_classes = self._process_annot(self.annot, main_pred, self.num_classes)
-        
-        #m_k = m_{k-1} + (x_k - m_{k-1})/k
-        #v_k = v_{k-1} + (x_k - m_{k-1})(x_k - m_k)
-        static_shape = unscaled_logits.shape.as_list()
+        #set shape based on runs and batch
+        unscaled_logits.set_shape([self._num_runs * self._batch_size] + unscaled_logits.shape.as_list()[1:])
+        self.annot.set_shape([self._batch_size] + self.annot.shape.as_list()[1:])
 
-        stacked_logits = tf.stack(tf.split(unscaled_logits, self._num_runs))
+        #make predition
+        logits = tf.image.resize_bilinear(unscaled_logits, pred_shape[1:3])
+        pred = tf.nn.softmax(logits)
+        stacked_pred = tf.stack(tf.split(pred, self._num_runs))
 
-        mean, var = tf.nn.moments(stacked_logits, [0])
-
-        self.mean_logits = (tf.image.resize_bilinear(mean, pred_shape[1:3]))
-        self.all_variance = (tf.image.resize_bilinear(var, pred_shape[1:3]))
-
-        #weights = tf.expand_dims(weights, -1)
-        # m_k = metrics_impl.metric_variable(static_shape, tf.float32, name="streaming_mean")
-        # v_k = metrics_impl.metric_variable(static_shape, tf.float32, name="streaming_variance")
-        # left = metrics_impl.metric_variable(static_shape, tf.float32, name="scratch")
-        # k = metrics_impl.metric_variable((), tf.float32, name="k")
-        
-        # update_left = tf.assign(left, unscaled_logits - m_k)
-        # update_k = tf.assign_add(k, 1)
-        # with tf.control_dependencies([update_left, update_k]):
-        #     update_mk = tf.assign_add(m_k, _safe_div(left, k))
-        # with tf.control_dependencies([update_mk]):        
-        #     update_vk = tf.assign(v_k, v_k + left*(unscaled_logits - m_k))
-
-        # self.update_op = tf.group([update_left, update_mk, update_vk, update_k])
-
-        # self.reset_op = tf.group([tf.assign(v, tf.zeros_like(v)) for v in [k, m_k, v_k]])
-
-        # variance = v_k / k
-
-        # self.all_variance = (tf.image.resize_bilinear(variance, pred_shape[1:3]))
-        
-        # self.mean_logits = (tf.image.resize_bilinear(m_k, pred_shape[1:3]))
-
+        self.mean_logits, self.all_variance = tf.nn.moments(stacked_pred, [0])
         self.prediction = tf.cast(tf.expand_dims(tf.argmax(self.mean_logits, -1),-1), tf.int32)
+        self.interp_variance = tf.reduce_mean(self.all_variance, -1, keepdims=True)
 
-        xs = [list(range(s)) for s in [self._batch_size] + pred_shape[1:-1]]
-        grid = np.meshgrid(*xs, indexing="ij")
-        grid = list(map(lambda x: np.expand_dims(x,-1), grid))
-        grid_pl = list(map(lambda x: tf.placeholder(tf.int32, shape=x.shape), grid))
-        self.idx = tf.concat(grid_pl + [self.prediction], -1)
+        #get weights and new annot from predictions
+        weights = tf.to_float(get_valid(self.annot, self.ignore_label))
+        self.annot, self.num_classes = self._process_annot(self.annot, self.prediction, self.num_classes)
 
-        self.feed = {}
-        for pl, v in zip(grid_pl, grid):
-            self.feed[pl] = v
+        #Popoviciu's inequality: var[X] <= (max - min)^2/4
+        #https://stats.stackexchange.com/questions/45588/variance-of-a-bounded-random-variable
+        max_var = 1./4.
+        scale = 10
+        max_var /= scale
+        self.norm_variance = tf.nn.sigmoid((self.interp_variance - max_var) / max_var)
 
-        self.interp_variance = tf.expand_dims(tf.gather_nd(self.all_variance, self.idx),-1, name="interp_variance")
-
-        self.metrics, self.update = metrics.get_metric_ops(self.annot, self.interp_variance, weights)
+        with tf.device(self.pre_process_gpu):
+            self.metrics, self.update = metrics.get_metric_ops(self.annot, self.norm_variance, weights)
 
     @doc_inherit
     def get_init_feed(self):
@@ -108,10 +86,7 @@ class DropoutProcessor(pp.PostProcessor):
         fetch = []
         # for i in range(self._num_runs):
         #     # fetch.append({i: self.update_op})
-        fetch.append({
-            "all_var": self.all_variance,
-            "pred": self.prediction,
-            "res": self.interp_variance,})
+        fetch.append({"res": self.norm_variance,})
         fetch.append({"update": self.update})
         fetch.append({"metrics": self.metrics})
         # fetch.append({"reset": self.reset_op})
@@ -119,14 +94,14 @@ class DropoutProcessor(pp.PostProcessor):
     
     @doc_inherit
     def get_feed_dict(self):
-        return self.feed
+        return {} #self.feed
     
     @doc_inherit
     def post_process(self, numpy_dict):
-        import matplotlib.pyplot as plt
-        plt.imshow(numpy_dict["res"][0,...,0])
-        plt.show()
-        import pdb; pdb.set_trace()
+        # import matplotlib.pyplot as plt
+        # plt.imshow(numpy_dict["res"][0,...,0])
+        # plt.show()
+        # import pdb; pdb.set_trace()
         results = metrics.get_metric_values(numpy_dict["metrics"])
 
         return results
