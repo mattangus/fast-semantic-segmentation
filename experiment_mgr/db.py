@@ -64,6 +64,7 @@ class Result(pw.Model):
     aupr = pw.DoubleField(null=False)
     fpr_at_tpr = pw.DoubleField(null=False)
     detection_error = pw.DoubleField(null=False)
+    max_iou = pw.DoubleField(null=False)
     had_error = pw.BooleanField(null=False)
 
     class Meta:

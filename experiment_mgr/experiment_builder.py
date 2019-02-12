@@ -42,8 +42,8 @@ class ExperimentDataset(object):
 
 #ood
 sun_experiment_set = ExperimentDataset("configs/data/sun_train.config", "configs/data/sun_eval.config")
-normal_experiment_set = ExperimentDataset("configs/data/normal.config", "configs/data/normal.config")
-uniform_experiment_set = ExperimentDataset("configs/data/uniform.config", "configs/data/uniform.config")
+normal_experiment_set = ExperimentDataset("configs/data/normal_train.config", "configs/data/normal_eval.config")
+uniform_experiment_set = ExperimentDataset("configs/data/uniform_train.config", "configs/data/uniform_eval.config")
 #error
 city_experiment_set = ExperimentDataset("configs/data/cityscapes_train.config", "configs/data/cityscapes_eval.config")
 

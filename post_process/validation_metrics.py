@@ -2,18 +2,37 @@ import tensorflow as tf
 import numpy as np
 import sklearn as sk
 
-num_thresholds = 200
+num_thresholds = 400
+eps = 1e-7
 
 def get_metric_ops(annot, prediction, weights):
-    with tf.variable_scope("Roc"):
-        RocPoints, roc_update = tf.contrib.metrics.streaming_curve_points(annot,prediction,weights,num_thresholds,curve='ROC')
-    with tf.variable_scope("Pr"):
-        PrPoints, pr_update = tf.contrib.metrics.streaming_curve_points(annot,prediction,weights,num_thresholds,curve='PR')
 
-    update = tf.group([roc_update, pr_update])
+    res, update = tf.contrib.metrics.precision_recall_at_equal_thresholds(tf.cast(annot, tf.bool),prediction,weights,num_thresholds, name="ConfMat")
+
+    tp = res.tp
+    fp = res.fp
+    tn = res.tn
+    fn = res.fn
+
+    with tf.variable_scope("Roc"):
+        tpr = tp / tf.maximum(eps, tp + fn)
+        fpr = fp / tf.maximum(eps, fp + tn)
+        RocPoints = tf.stack([fpr, tpr], -1)
+    
+    with tf.variable_scope("Pr"):
+        PrPoints = tf.stack([res.recall, res.precision], -1)
+
+    with tf.variable_scope("iou"):
+        denom = tf.maximum(eps, tn + fn + fp)
+        # x = 1 - fn / denom
+        # y = -tp / denom
+        # IouPoints = tf.stack([x,y], -1)
+        IouPoints = tn / denom
+
     metrics = {
         "roc": RocPoints,
         "pr": PrPoints,
+        "iou": IouPoints,
     }
 
     return metrics, update
@@ -24,18 +43,35 @@ def _auc(points):
 def get_metric_values(metrics):
     roc = metrics["roc"]
     pr = metrics["pr"]
+    iou = metrics["iou"]
+
+    # import matplotlib.pyplot as plt
+    # import pdb; pdb.set_trace()
 
     auroc = _auc(roc)
     aupr = _auc(pr)
+    maxiou = np.max(iou)
 
-    fpr_tpr = sorted(roc, key=lambda x: np.abs(x[1] - 0.95))
-    fpr_at_tpr = fpr_tpr[0][0]
-
-    detection_error = 0.5*(1 - fpr_tpr[0][1]) + 0.5*fpr_at_tpr
+    prev = np.array([0.,0.])
+    fpr_at_tpr_p = None
+    for p in reversed(roc):
+        if p[1] >= 0.95:
+            pct = (0.95 - prev[1]) / (p[1] - prev[1])
+            fpr_at_tpr_p = pct * p + (1 - pct) * prev
+            break
+        prev = p
+    
+    if fpr_at_tpr_p is None:
+        fpr_at_tpr = 1.0
+        detection_error = 1.0
+    else:
+        fpr_at_tpr = fpr_at_tpr_p[0]
+        detection_error = 0.5*(1 - fpr_at_tpr_p[1]) + 0.5*fpr_at_tpr_p[0]
 
     ret = {
         "auroc": auroc,
         "aupr": aupr,
+        "maxiou": maxiou,
         "fpr_at_tpr": fpr_at_tpr,
         "detection_error": detection_error,
     }

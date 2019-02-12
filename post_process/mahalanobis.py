@@ -11,7 +11,7 @@ class MahalProcessor(pp.PostProcessor):
 
     def __init__(self, model, outputs_dict, num_classes,
                     annot, image, ignore_label, process_annot,
-                    num_gpus,batch_size,
+                    num_gpus, batch_size,
                     #class specific
                     eval_dir, epsilon, global_cov, global_mean):
         super().__init__("Mahal", model, outputs_dict, num_gpus)
@@ -30,6 +30,7 @@ class MahalProcessor(pp.PostProcessor):
         self.global_mean = global_mean
         self._process_annot = process_annot
         self._load_stats()
+        self.batch_size = batch_size
 
         self.logit_gpu = "gpu:0"
         self.pre_process_gpu = "gpu:0"
@@ -54,6 +55,8 @@ class MahalProcessor(pp.PostProcessor):
     def _process_logits(self):
         final_logits = self.outputs_dict[self.model.final_logits_key]
         pred_shape = self.outputs_dict[self.model.main_class_predictions_key].shape.as_list()
+        
+        final_logits.set_shape([self.batch_size] + final_logits.shape.as_list()[1:])
 
         self.mean_p = tf.placeholder(tf.float32, self.mean_v.shape, "mean_p")
         self.var_inv_p = tf.placeholder(tf.float32, self.var_inv_v.shape, "var_inv_p")

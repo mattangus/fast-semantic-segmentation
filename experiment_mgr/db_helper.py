@@ -148,7 +148,7 @@ def get_top_from_config(config, exclude_fn=None):
         results = [r for r in results if not exclude_fn(r)]
 
     exps = set()
-    for metric, ind in [("auroc",-1), ("aupr", -1), ("fpr_at_tpr",0), ("detection_error",0)]:
+    for metric, ind in [("auroc",-1), ("aupr", -1), ("fpr_at_tpr",0), ("detection_error",0), ("max_iou", -1)]:
         ex = sorted(results, key=lambda x: x.__data__[metric])[ind]
         exps.add(ex)
 
@@ -161,7 +161,8 @@ def upload_result(run_args, print_buffer, result, had_error):
             "auroc": 0,
             "aupr": 0,
             "fpr_at_tpr": 0,
-            "detection_error": 0
+            "detection_error": 0,
+            "max_iou": 0
         }
     
     experiment = create_experiment(run_args)
@@ -177,6 +178,7 @@ def upload_result(run_args, print_buffer, result, had_error):
         result.aupr = values["aupr"]
         result.fpr_at_tpr = values["fpr_at_tpr"]
         result.detection_error = values["detection_error"]
+        result.max_iou = values["max_iou"]
         result.save()
     elif len(exp_res) == 0:
         print("creating result")

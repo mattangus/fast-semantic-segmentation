@@ -98,7 +98,7 @@ def _build_random(reader_config):
             yield items_to_handlers
 
     types = {
-        _IMAGE_FIELD: tf.float32,
+        _IMAGE_FIELD: tf.uint8,
         _IMAGE_NAME_FIELD: tf.string,
         _LABEL_FIELD: tf.uint8,
     }
@@ -154,7 +154,7 @@ def build(input_reader_config, num_epoch):
         dataset_choices = []
         for i, n in enumerate(num_examples):
             dataset_choices.extend([i] * n)
-        
+
         random.shuffle(dataset_choices)
         dataset_choices = np.array(dataset_choices, dtype=np.int64)
         choice_dataset = tf.data.Dataset.from_tensor_slices(dataset_choices)
