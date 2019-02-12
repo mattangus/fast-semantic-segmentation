@@ -153,7 +153,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             if idx % 1 == 0:
                 #every now and then do regular print
                 end = "\n"
-            print('{0:.4f} iter: {1}, {2}'.format(elapsed, idx+1, result), end=end) 
+            print('{0:.4f} iter: {1}, {2}'.format(elapsed, idx+1, result), end=end)
         print('{0:.4f} iter: {1}, {2}'.format(elapsed, idx+1, result))
         return result
 

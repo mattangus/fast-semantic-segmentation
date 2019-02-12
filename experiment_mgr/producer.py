@@ -74,6 +74,10 @@ def main(gpus, is_debug):
         get = multi_gpu_get
 
     to_run = experiment_factory.get_all_to_run()
+
+    if is_debug:
+        to_run = to_run[:1]
+
     while len(to_run) > 0:
         exp_results = []
         

@@ -71,7 +71,7 @@ def get_metric_values(metrics):
     ret = {
         "auroc": auroc,
         "aupr": aupr,
-        "maxiou": maxiou,
+        "max_iou": maxiou,
         "fpr_at_tpr": fpr_at_tpr,
         "detection_error": detection_error,
     }
