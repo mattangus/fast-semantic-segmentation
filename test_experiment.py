@@ -5,7 +5,7 @@ conf = 1
 mahal = 2
 softmax = 3
 
-mode = softmax
+mode = conf
 
 gpus = "2"
 is_debug = True

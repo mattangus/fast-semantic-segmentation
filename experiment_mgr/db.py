@@ -1,7 +1,26 @@
 import peewee as pw
 import json
+import numpy as np
+import io
 
 db = pw.SqliteDatabase("experiments.sqlite", pragmas={'foreign_keys': 1})
+
+class NumpyField(pw.Field):
+    field_type = 'text'
+
+    def db_value(self, value):
+        memfile = io.BytesIO()
+        np.save(memfile, value)
+        memfile.seek(0)
+        str_value = memfile.read().decode('latin-1')
+        return str_value
+
+    def python_value(self, value):
+        memfile = io.BytesIO()
+        memfile.write(value.encode('latin-1'))
+        memfile.seek(0)
+        array = np.load(memfile)
+        return array
 
 class ExperimentConfig(pw.Model):
     id = pw.PrimaryKeyField(null=False)
@@ -71,12 +90,16 @@ class Result(pw.Model):
         database = db
 
 #keep long text separate so it is not pulled with result
-class PrintBuffer(pw.Model):
-    result = pw.ForeignKeyField(Result, backref='print_buffer', primary_key=True)
-    value = pw.TextField()
+class Buffer(pw.Model):
+    result = pw.ForeignKeyField(Result, backref='buffers', primary_key=True)
+    print_buffer = pw.TextField()
+    tp = NumpyField()
+    tn = NumpyField()
+    fp = NumpyField()
+    fn = NumpyField()
 
     class Meta:
         database = db
 
 db.connect()
-db.create_tables([ExperimentConfig, ArgsGroup, KeyWordArgs, Experiment, Result, PrintBuffer])
+db.create_tables([ExperimentConfig, ArgsGroup, KeyWordArgs, Experiment, Result, Buffer])

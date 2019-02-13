@@ -162,7 +162,11 @@ def upload_result(run_args, print_buffer, result, had_error):
             "aupr": 0,
             "fpr_at_tpr": 0,
             "detection_error": 0,
-            "max_iou": 0
+            "max_iou": 0,
+            "tp": "",
+            "fp": "",
+            "tn": "",
+            "fn": "",
         }
     
     experiment = create_experiment(run_args)
@@ -185,9 +189,19 @@ def upload_result(run_args, print_buffer, result, had_error):
         result = db.Result.create(
             experiment=experiment,
             had_error=had_error,
-            **values
+            auroc=values["auroc"],
+            aupr=values["aupr"],
+            fpr_at_tpr=values["fpr_at_tpr"],
+            detection_error=values["detection_error"],
+            max_iou=values["max_iou"]
         )
-        db.PrintBuffer.create(value=print_buffer, result=result)
+        db.Buffer.create(
+            print_buffer=print_buffer,
+            tp=values["tp"],
+            fp=values["fp"],
+            tn=values["tn"],
+            fn=values["fn"],
+            result=result)
     else:
         #can't happen
         raise Exception("this shouldn't happen")

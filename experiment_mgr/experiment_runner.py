@@ -97,6 +97,9 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     num_step = num_images // batch
 
+    np.set_printoptions(threshold=2, edgeitems=1)
+    print_exclude = {"tp", "fp", "tn", "fn"}
+
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.per_process_gpu_memory_fraction=1.
     run_options = tf.RunOptions(report_tensor_allocations_upon_oom = True)
@@ -153,8 +156,13 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             if idx % 1 == 0:
                 #every now and then do regular print
                 end = "\n"
-            print('{0:.4f} iter: {1}, {2}'.format(elapsed, idx+1, result), end=end)
-        print('{0:.4f} iter: {1}, {2}'.format(elapsed, idx+1, result))
+
+            to_print = {}
+            for v in result:
+                if v not in print_exclude:
+                    to_print[v] = result[v]
+            print('{0:.4f} iter: {1}, {2}'.format(elapsed, idx+1, to_print), end=end)
+        print('{0:.4f} iter: {1}, {2}'.format(elapsed, idx+1, to_print))
         return result
 
 

@@ -23,16 +23,17 @@ def get_metric_ops(annot, prediction, weights):
         PrPoints = tf.stack([res.recall, res.precision], -1)
 
     with tf.variable_scope("iou"):
-        denom = tf.maximum(eps, tn + fn + fp)
-        # x = 1 - fn / denom
-        # y = -tp / denom
-        # IouPoints = tf.stack([x,y], -1)
-        IouPoints = tn / denom
+        denom = tf.maximum(eps, tp + fn + fp)
+        IouPoints = tp / denom
 
     metrics = {
         "roc": RocPoints,
         "pr": PrPoints,
         "iou": IouPoints,
+        "tp": tp,
+        "fp": fp,
+        "tn": tn,
+        "fn": fn,
     }
 
     return metrics, update
@@ -68,12 +69,21 @@ def get_metric_values(metrics):
         fpr_at_tpr = fpr_at_tpr_p[0]
         detection_error = 0.5*(1 - fpr_at_tpr_p[1]) + 0.5*fpr_at_tpr_p[0]
 
+    tp = metrics["tp"]
+    fp = metrics["fp"]
+    tn = metrics["tn"]
+    fn = metrics["fn"]
+
     ret = {
         "auroc": auroc,
         "aupr": aupr,
         "max_iou": maxiou,
         "fpr_at_tpr": fpr_at_tpr,
         "detection_error": detection_error,
+        "tp": tp,
+        "fp": fp,
+        "tn": tn,
+        "fn": fn,
     }
 
     return ret
