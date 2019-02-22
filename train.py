@@ -13,7 +13,7 @@ from builders import model_builder
 from builders import dataset_builder
 from protos import pipeline_pb2
 from libs.trainer import train_segmentation_model
-
+from protos.config_reader import read_config
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -51,12 +51,17 @@ flags.DEFINE_integer('task', 0, 'The task ID. Should increment per worker '
 
 # Training configuration settings
 
-flags.DEFINE_string('config_path', '',
+flags.DEFINE_string('model_config', None,
                     'Path to a pipeline_pb2.TrainEvalConfig config '
                     'file. If provided, other configs are ignored')
-flags.mark_flag_as_required('config_path')
+flags.mark_flag_as_required('model_config')
 
-flags.DEFINE_string('logdir', '',
+flags.DEFINE_string('data_config', None,
+                    'Path to a pipeline_pb2.TrainEvalConfig config '
+                    'file. If provided, other configs are ignored')
+flags.mark_flag_as_required('data_config')
+
+flags.DEFINE_string('logdir', None,
                     'Directory to save the checkpoints and training summaries.')
 flags.mark_flag_as_required('logdir')
 
@@ -75,21 +80,18 @@ flags.DEFINE_boolean("log_memory", False, "")
 
 def main(_):
     tf.gfile.MakeDirs(FLAGS.logdir)
-    pipeline_config = pipeline_pb2.PipelineConfig()
-    if not os.path.exists(FLAGS.config_path):
-        raise FileNotFoundError(FLAGS.config_path)
-    with tf.gfile.GFile(FLAGS.config_path, "r") as f:
-        proto_str = f.read()
-        text_format.Merge(proto_str, pipeline_config)
+
+    pipeline_config = read_config(FLAGS.model_config, FLAGS.data_config)
 
     model_config = pipeline_config.model
     train_config = pipeline_config.train_config
-    input_config = pipeline_config.train_input_reader
+    input_config = pipeline_config.input_reader
 
     create_model_fn = functools.partial(
         model_builder.build,
         model_config=model_config,
-        is_training=True)
+        is_training=True,
+        ignore_label=input_config.ignore_label)
 
     create_input_fn = functools.partial(
         dataset_builder.build,

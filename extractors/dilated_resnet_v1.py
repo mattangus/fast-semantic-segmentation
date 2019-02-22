@@ -25,7 +25,7 @@ import collections
 import tensorflow as tf
 
 from tensorflow.contrib.slim.nets import resnet_utils
-from tensorflow.contrib.slim.nets import resnet_v1
+#from tensorflow.contrib.slim.nets import resnet_v1
 
 
 slim = tf.contrib.slim
@@ -94,7 +94,7 @@ def bottleneck(inputs,
           stride=stride,
           activation_fn=tf.nn.relu6 if use_bounded_activations else None,
           scope='shortcut')
-
+          
     residual = slim.conv2d(inputs, depth_bottleneck, [1, 1], stride=1,
                            scope='conv1')
     residual = resnet_utils.conv2d_same(residual, depth_bottleneck, 3, stride,

@@ -14,6 +14,7 @@ from builders import model_builder
 from protos import pipeline_pb2
 from libs.evaluator import eval_segmentation_model
 from libs.evaluator import eval_segmentation_model_once
+from protos.config_reader import read_config
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -27,19 +28,24 @@ flags.DEFINE_string('evaluate_all_from_checkpoint', None,
                     'evaluation from. All proceeding checkpoints will also '
                     ' be evaluated. Should be the similar to model.ckpt.XXX')
 
-flags.DEFINE_string('train_dir', '',
+flags.DEFINE_string('train_dir', None,
                     'Directory containing checkpoints to evaluate, typically '
                     'set to `train_dir` used in the training job.')
 flags.mark_flag_as_required('train_dir')
 
-flags.DEFINE_string('eval_dir', '',
+flags.DEFINE_string('eval_dir', None,
                     'Directory to write eval summaries to.')
 flags.mark_flag_as_required('eval_dir')
 
-flags.DEFINE_string('config_path', '',
+flags.DEFINE_string('model_config', None,
                     'Path to a pipeline_pb2.TrainEvalConfig config '
                     'file. If provided, other configs are ignored')
-flags.mark_flag_as_required('config_path')
+flags.mark_flag_as_required('model_config')
+
+flags.DEFINE_string('data_config', None,
+                    'Path to a pipeline_pb2.TrainEvalConfig config '
+                    'file. If provided, other configs are ignored')
+flags.mark_flag_as_required('data_config')
 
 flags.DEFINE_boolean('image_summaries', False,
                      'Show summaries of eval predictions and save to '
@@ -76,21 +82,26 @@ def main(_):
     if not tf.gfile.IsDirectory(FLAGS.train_dir):
         raise ValueError('`train_dir` must be a valid directory '
                          'containing model checkpoints from training.')
-    pipeline_config = pipeline_pb2.PipelineConfig()
-    with tf.gfile.GFile(FLAGS.config_path, "r") as f:
-        proto_str = f.read()
-        text_format.Merge(proto_str, pipeline_config)
+    pipeline_config = read_config(FLAGS.model_config, FLAGS.data_config)
     eval_config = pipeline_config.eval_config
-    input_config = pipeline_config.eval_input_reader
+    input_config = pipeline_config.input_reader
     model_config = pipeline_config.model
 
+    #TODO:handle this special case better
+    class_loss_type = model_config.pspnet.loss.classification_loss.WhichOneof('loss_type')
+    if class_loss_type == "confidence":
+        num_extra_class = 1
+    else:
+        num_extra_class = 0
+        
     create_input_fn = functools.partial(
         dataset_builder.build,
         input_reader_config=input_config)
     create_model_fn = functools.partial(
         model_builder.build,
         model_config=model_config,
-        is_training=False)
+        is_training=False,
+        ignore_label=input_config.ignore_label)
 
     eval_input_type = eval_config.eval_input_type
     input_type = eval_input_type.WhichOneof('eval_input_type_oneof')
@@ -118,6 +129,8 @@ def main(_):
                                          create_input_fn,
                                          input_dims,
                                          eval_config,
+                                         num_extra_class=num_extra_class,
+                                         input_reader=input_config,
                                          eval_dir=FLAGS.eval_dir,
                                          cropped_evaluation=cropped_evaluation,
                                          image_summaries=FLAGS.image_summaries,
@@ -128,13 +141,14 @@ def main(_):
             create_input_fn,
             input_dims,
             eval_config,
+            num_extra_class=num_extra_class,
+            input_reader=input_config,
             train_dir=FLAGS.train_dir,
             eval_dir=FLAGS.eval_dir,
             cropped_evaluation=cropped_evaluation,
             evaluate_single_checkpoint=FLAGS.evaluate_all_from_checkpoint,
             image_summaries=FLAGS.image_summaries,
             verbose=FLAGS.verbose)
-
 
 if __name__ == '__main__':
     tf.app.run()

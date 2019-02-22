@@ -2,6 +2,7 @@ from functools import partial
 import tensorflow as tf
 from protos import losses_pb2
 
+import helpers
 
 def _softmax_classification_loss(predictions, labels, ignore_label):
     flattened_labels = tf.reshape(labels, shape=[-1])
@@ -108,7 +109,37 @@ def _l2norm_smooth(predictions, labels, ignore_label):
 
     return diff + (0.01 * smooth)
 
-def build(loss_config):
+def _confidence_loss(predictions, labels, ignore_label):
+    #take the last channel of preds for pixel confidence
+    confidence = tf.nn.sigmoid(predictions[...,-1:])
+
+    #take the rest for predictions
+    predictions = tf.nn.softmax(predictions[...,:-1])
+    num_classes = predictions.shape.as_list()[-1]
+
+    labels = tf.cast(labels, tf.int32)
+
+    eps = 1e-12
+    clamp_pred = tf.clip_by_value(predictions, 0. + eps, 1. - eps,)
+    clamp_conf = tf.clip_by_value(confidence, 0. + eps, 1. - eps,)
+
+    # Randomly set half of the confidences to 1 (i.e. no hints)
+    b = tf.math.round(tf.random.uniform(clamp_conf.shape))
+    conf_rand = clamp_conf * b + (1 - b)
+    one_hot = tf.one_hot(tf.squeeze(labels,-1), num_classes)
+    pred_new = clamp_pred * conf_rand + one_hot * (1 - conf_rand)
+    pred_new = tf.log(pred_new)
+
+    weights = tf.to_float(helpers.get_valid(labels, ignore_label))
+
+    xentropy_loss = -tf.reduce_sum(pred_new * one_hot, -1, keepdims=True) * weights
+    confidence_loss = -tf.log(confidence) * weights
+
+    total_loss = tf.reduce_mean(xentropy_loss) + (0.5 * tf.reduce_mean(confidence_loss))
+
+    return total_loss
+
+def build(loss_config, ignore_label):
     if not isinstance(loss_config, losses_pb2.Loss):
         raise ValueError('loss_config not of type '
                          'losses_pb2.ClassificationLoss.')
@@ -118,10 +149,13 @@ def build(loss_config):
     class_loss_type = loss_config.classification_loss.WhichOneof('loss_type')
     if class_loss_type == 'softmax':
         class_loss = partial(_softmax_classification_loss,
-            ignore_label=loss_config.ignore_label)
+            ignore_label=ignore_label)
     elif class_loss_type == 'focal':
         class_loss = partial(_focal_loss,
-            ignore_label=loss_config.ignore_label)
+            ignore_label=ignore_label)
+    elif class_loss_type == "confidence":
+        class_loss = partial(_confidence_loss,
+            ignore_label=ignore_label)
     else:
         raise ValueError('Empty class loss config.')
     

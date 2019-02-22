@@ -3,6 +3,7 @@ import functools
 import tensorflow as tf
 from tensorflow.python.ops import parsing_ops
 import random
+import numpy as np
 
 from protos import input_reader_pb2
 
@@ -24,15 +25,16 @@ def decode_image_file(filename, channels, size=None, resize=None,
 
     valid_size = valid_imsize(size)
     valid_resize = valid_imsize(resize)
-    
+
     if not valid_resize and valid_size:
-        img.set_shape(size)
+        shape = list(size) + [channels]
+        img.set_shape(shape)
     elif valid_resize:
-        img = tf.image.resize_images(img, resize, method)
+        img = tf.cast(tf.image.resize_images(img, resize, method), tf.uint8)
 
     return img
 
-def _create_tf_example_decoder(input_reader_config):
+def _create_tf_example_decoder(reader_config):
 
     def decode_example(ex_proto):
         keys_to_features = {
@@ -46,10 +48,10 @@ def _create_tf_example_decoder(input_reader_config):
                 tf.FixedLenFeature((), tf.string, default_value='png'),
         }
 
-        height = input_reader_config.height
-        width = input_reader_config.width
-        rheight = input_reader_config.rheight
-        rwidth = input_reader_config.rwidth
+        height = reader_config.height
+        width = reader_config.width
+        rheight = reader_config.rheight
+        rwidth = reader_config.rwidth
 
         decoded = tf.parse_single_example(ex_proto, keys_to_features)
 
@@ -66,12 +68,74 @@ def _create_tf_example_decoder(input_reader_config):
             _IMAGE_NAME_FIELD: decoded["image/filename"],
             _LABEL_FIELD: ground_truth_image,
         }
+
         return items_to_handlers
 
     return decode_example
 
+def _build_random(reader_config):
+    height = reader_config.height
+    width = reader_config.width
+    
+    if "normal" in reader_config.input_path:
+        rand = lambda: (np.clip(np.random.normal(0.5,size=(height, width, 3)), 0.0, 1.0)*255).astype(np.uint8)
+        # rand = tf.distributions.Normal(np.ones((1, height, width, 3),dtype=np.float32)*0.5,1.0).sample()
+        #rand = tf.random.normal((1, height, width, 3),mean=0.5,stddev=1.0)
+        #rand = tf.clip_by_value(rand, 0.0, 1.0)*255
+    elif "uniform" in reader_config.input_path:
+        rand = lambda: np.random.uniform(0.0, 255.0, size=(height, width, 3)).astype(np.uint8)
+        #rand = tf.distributions.Uniform(np.zeros((1, height, width, 3),dtype=np.float32),1.0).sample()
+        #rand = tf.random.uniform((1, height, width, 3),0.0, 255.0)
+    
+    def gen():
+        label = (np.ones((height, width, 1))*19).astype(np.uint8)
+        for _ in range(reader_config.num_examples):
+            items_to_handlers = {
+                _IMAGE_FIELD: rand(),
+                _IMAGE_NAME_FIELD: "rand",
+                _LABEL_FIELD: label,
+            }
+            yield items_to_handlers
 
-def build(input_reader_config):
+    types = {
+        _IMAGE_FIELD: tf.uint8,
+        _IMAGE_NAME_FIELD: tf.string,
+        _LABEL_FIELD: tf.uint8,
+    }
+
+    shapes = {
+        _IMAGE_FIELD: tf.TensorShape([height, width, 3]),
+        _IMAGE_NAME_FIELD: tf.TensorShape([]),
+        _LABEL_FIELD: tf.TensorShape([height, width, 1]),
+    }
+
+    dataset = tf.data.Dataset.from_generator(gen, types, shapes)
+    dataset = dataset.repeat(reader_config.num_examples)
+
+    return dataset
+
+def _make_dataset(reader_config, num_readers):
+    if ".dist" not in reader_config.input_path:
+
+        if not reader_config.input_path or \
+                not os.path.isfile(reader_config.input_path):
+            raise ValueError('At least one input path must be specified in '
+                            '`input_reader_config`.')
+
+
+        decoder = _create_tf_example_decoder(reader_config)
+
+        dataset = tf.data.TFRecordDataset(reader_config.input_path,
+                                "GZIP",
+                                num_readers)
+        
+        dataset = dataset.map(decoder, num_parallel_calls=num_readers)
+    else:
+        dataset = _build_random(reader_config)
+    
+    return dataset
+
+def build(input_reader_config, num_epoch):
     if not isinstance(input_reader_config, input_reader_pb2.InputReader):
         raise ValueError('input_reader_config not of type '
                          'input_reader_pb2.InputReader.')
@@ -81,24 +145,33 @@ def build(input_reader_config):
         raise ValueError('input_reader_config must have '
                              '`tf_record_input_reader`.')
 
-    if not reader_config.input_path or \
-            not os.path.isfile(reader_config.input_path[0]):
-        raise ValueError('At least one input path must be specified in '
-                         '`input_reader_config`.')
-
-    decoder = _create_tf_example_decoder(input_reader_config)
-
-    dataset = tf.data.TFRecordDataset(reader_config.input_path[:],
-                            "GZIP",
-                            input_reader_config.num_readers)
     
-    dataset = dataset.map(decoder, num_parallel_calls=input_reader_config.num_readers)
-    epochs = input_reader_config.num_epochs if input_reader_config.num_epochs > 0 else None
-    dataset = dataset.repeat(epochs)
-    
+    if len(reader_config) == 1:
+        dataset = _make_dataset(reader_config[0], input_reader_config.num_readers)
+    else:
+        datasets = list(map(lambda x: _make_dataset(x, input_reader_config.num_readers), reader_config))
+        num_examples = [r.num_examples for r in reader_config]
+        dataset_choices = []
+        for i, n in enumerate(num_examples):
+            dataset_choices.extend([i] * n)
+
+        random.shuffle(dataset_choices)
+        dataset_choices = np.array(dataset_choices, dtype=np.int64)
+        choice_dataset = tf.data.Dataset.from_tensor_slices(dataset_choices)
+
+        dataset = tf.data.experimental.choose_from_datasets(datasets, choice_dataset)
+
+    epochs = num_epoch if num_epoch > 0 else None
+
     if input_reader_config.shuffle:
-        dataset = dataset.shuffle(input_reader_config.queue_capacity,
-                                    seed=_DATASET_SHUFFLE_SEED)
+        sar_fn = tf.data.experimental.shuffle_and_repeat
+        sar = sar_fn(input_reader_config.queue_capacity,
+                        epochs, seed=_DATASET_SHUFFLE_SEED)
+        dataset = dataset.apply(sar)
         print("shuffle seed:", _DATASET_SHUFFLE_SEED)
+    else:
+        dataset = dataset.repeat(epochs)
+
+    dataset = dataset.prefetch(input_reader_config.prefetch_queue_capacity)
 
     return dataset

@@ -18,9 +18,10 @@ PSPNET_ICNET_FEATURE_EXTRACTER = {
     'dilated_resnet200':
         pspnet_icnet_resnet_v1.PSPNetICNetDilatedResnet200FeatureExtractor,
     'dilated_mobilenet':
-        pspnet_icnet_mobilenet_v2.PSPNetICNetMobilenetFeatureExtractor
+        pspnet_icnet_mobilenet_v2.PSPNetICNetMobilenetFeatureExtractor,
+    "dropout_resnet50":
+        pspnet_icnet_resnet_v1.DropoutResnet50FeatureExtractor,
 }
-
 
 def _build_pspnet_icnet_extractor(
         feature_extractor_config, filter_scale, is_training,
@@ -42,7 +43,7 @@ def _build_pspnet_icnet_extractor(
                                    depth_multiplier=depth_multiplier)
 
 def _build_pspnet_icnet_model(model_config, is_training, add_summaries,
-                              build_baseline_psp=False):
+                              ignore_class, build_baseline_psp=False):
     num_classes = model_config.num_classes
     if not num_classes:
         raise ValueError('"num_classes" must be greater than 0.')
@@ -66,9 +67,7 @@ def _build_pspnet_icnet_model(model_config, is_training, add_summaries,
 
     loss_config = model_config.loss
     classification_loss = (
-            losses_builder.build(loss_config))
-    dist_loss = (
-            dist_builder.build(loss_config, num_classes))
+            losses_builder.build(loss_config, ignore_class))
     use_aux_loss = loss_config.use_auxiliary_loss
 
     scale_predictions = model_config.scale_predictions #model_config.something
@@ -77,13 +76,10 @@ def _build_pspnet_icnet_model(model_config, is_training, add_summaries,
         'is_training': is_training,
         'num_classes': num_classes,
         'model_arg_scope': model_arg_scope,
-        'num_classes': num_classes,
         'feature_extractor': feature_extractor,
         'classification_loss': classification_loss,
-        'dist_loss': dist_loss,
         'use_aux_loss': use_aux_loss,
         'add_summaries': add_summaries,
-        'scale_pred': scale_predictions,
     }
 
     if not build_baseline_psp:
@@ -106,7 +102,7 @@ def _build_pspnet_icnet_model(model_config, is_training, add_summaries,
             # TODO: remove hardcoded values here
             common_kwargs['main_loss_weight'] = 1.0
             common_kwargs['aux_loss_weight'] = 0.4
-            common_kwargs['dist_loss_weight'] = 1.0
+            common_kwargs['scale_pred'] = scale_predictions
         common_kwargs['train_reduce'] = model_config.train_reduce
         model = (num_classes, pspnet_architecture.PSPNetArchitecture(
             filter_scale=filter_scale,
@@ -114,18 +110,19 @@ def _build_pspnet_icnet_model(model_config, is_training, add_summaries,
     return model
 
 
-def build(model_config, is_training, add_summaries=True):
-    if not isinstance(model_config, model_pb2.FastSegmentationModel):
+def build(model_config, is_training, ignore_label, add_summaries=True):
+    if not isinstance(model_config, model_pb2.SegmentationModel):
         raise ValueError('model_config not of type '
-                         'model_pb2.FastSegmentationModel.')
+                         'model_pb2.SegmentationModel.')
 
     model = model_config.WhichOneof('model')
     if model == 'pspnet':
         return _build_pspnet_icnet_model(
             model_config.pspnet, is_training, add_summaries,
-            build_baseline_psp=True)
+            ignore_label, build_baseline_psp=True)
     elif model == 'icnet':
         return _build_pspnet_icnet_model(
-            model_config.icnet, is_training, add_summaries)
+            model_config.icnet, is_training, add_summaries,
+            ignore_label)
 
     raise ValueError('Unknown model: {}'.format(model))

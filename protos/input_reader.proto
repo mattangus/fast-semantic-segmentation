@@ -4,18 +4,18 @@ package fast_semantic_segmentation.protos;
 
 message InputReader {
     optional bool shuffle = 1 [default=true];
-    optional uint32 queue_capacity = 2 [default=2000];
-    optional uint32 min_after_dequeue = 3 [default=1000];
-    optional uint32 num_epochs = 4 [default=0];
-    optional uint32 num_readers = 5 [default=32];
-    optional TFRecordInputReader tf_record_input_reader = 6;
-    optional uint32 num_examples = 7;
-    required uint32 height = 8;
-    required uint32 width = 9;
-    optional uint32 rheight = 10;
-    optional uint32 rwidth = 11;
+    optional uint32 queue_capacity = 2 [default=200];
+    optional int32 prefetch_queue_capacity = 3 [default=5];
+    optional uint32 num_readers = 4 [default=32];
+    repeated TFRecordInputReader tf_record_input_reader = 5;
+    repeated uint32 ignore_label = 11;
 }
 
 message TFRecordInputReader {
-    repeated string input_path = 1;
+    required string input_path = 1;
+    required uint32 num_examples = 6;
+    required uint32 height = 7;
+    required uint32 width = 8;
+    optional uint32 rheight = 9;
+    optional uint32 rwidth = 10;
 }

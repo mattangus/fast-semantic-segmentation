@@ -69,9 +69,9 @@ def streaming_mean(variable, weights=None, has_batch=False):
         final_w = safe_div(weight_total, tf.reduce_sum(weight_total,0))
         final_m = tf.reduce_sum(m_k * final_w,0)
     else:
-        final_m = tf.identity(m_k)
+        final_m = m_k
 
-    return final_m, tf.group(update_mk, update_counts)
+    return (final_m, m_k), tf.group(update_mk, update_counts)
 
 def batch_streaming_mean(variable, weights=None, has_batch=False):
     """

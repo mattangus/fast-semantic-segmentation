@@ -114,7 +114,7 @@ def _compute_new_static_size(image, min_dimension, max_dimension):
 
 
 def resize_to_range(image,
-                    label=None,
+                    labels=None,
                     min_dimension=None,
                     max_dimension=None,
                     method=tf.image.ResizeMethod.BILINEAR,

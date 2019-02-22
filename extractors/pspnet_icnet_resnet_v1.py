@@ -4,6 +4,7 @@ import tensorflow as tf
 from tensorflow.contrib.slim.nets import resnet_utils
 
 from . import dilated_resnet_v1
+from . import resnet_v1_beta
 from architectures import pspnet_architecture
 
 
@@ -55,7 +56,7 @@ class PSPNetICNetResnetV1FeatureExtractor(
             _, activations = self._resnet_model(
                     preprocessed_inputs,
                     filter_scale=self._filter_scale,
-                    mid_downsample=self._mid_downsample,
+                    #mid_downsample=self._mid_downsample, #removed for resnet_beta
                     num_classes=None,
                     is_training=(self._is_training and self._train_batch_norm),
                     global_pool=False,
@@ -84,7 +85,7 @@ class PSPNetICNetDilatedResnet50FeatureExtractor(
                  reuse_weights=None,
                  depth_multiplier=None,
                  weight_decay=0.0):
-        super(PSPNetICNetDilatedResnet50FeatureExtractor, self).__init__(
+        super().__init__(
             'resnet_v1_50', dilated_resnet_v1.dilated_resnet_v1_50, is_training,
             filter_scale, features_stride, mid_downsample, batch_norm_trainable,
             reuse_weights, depth_multiplier, weight_decay)
@@ -107,7 +108,7 @@ class PSPNetICNetDilatedResnet101FeatureExtractor(
                  reuse_weights=None,
                  depth_multiplier=None,
                  weight_decay=0.0):
-        super(PSPNetICNetDilatedResnet101FeatureExtractor, self).__init__(
+        super().__init__(
             'resnet_v1_101', dilated_resnet_v1.dilated_resnet_v1_101, is_training,
             filter_scale, features_stride, mid_downsample, batch_norm_trainable,
             reuse_weights, depth_multiplier, weight_decay)
@@ -130,7 +131,7 @@ class PSPNetICNetDilatedResnet152FeatureExtractor(
                  reuse_weights=None,
                  depth_multiplier=None,
                  weight_decay=0.0):
-        super(PSPNetICNetDilatedResnet152FeatureExtractor, self).__init__(
+        super().__init__(
             'resnet_v1_152', dilated_resnet_v1.dilated_resnet_v1_152, is_training,
             filter_scale, features_stride, mid_downsample, batch_norm_trainable,
             reuse_weights, depth_multiplier, weight_decay)
@@ -153,7 +154,30 @@ class PSPNetICNetDilatedResnet200FeatureExtractor(
                  reuse_weights=None,
                  depth_multiplier=None,
                  weight_decay=0.0):
-        super(PSPNetICNetDilatedResnet200FeatureExtractor, self).__init__(
+        super().__init__(
             'resnet_v1_200', dilated_resnet_v1.dilated_resnet_v1_200, is_training,
+            filter_scale, features_stride, mid_downsample, batch_norm_trainable,
+            reuse_weights, depth_multiplier, weight_decay)
+
+class DropoutResnet50FeatureExtractor(
+        PSPNetICNetResnetV1FeatureExtractor):
+    """ICNet Dilated Resnet 200 feature extractor implementation.
+
+    The implementation with dilations contains dilated convolutions in the last
+    two blocks of the network. This is how the resnet backbone is
+    implemented in the original ICNet paper.
+    """
+
+    def __init__(self,
+                 is_training,
+                 filter_scale=1.0,
+                 mid_downsample=False,
+                 features_stride=8,
+                 batch_norm_trainable=False,
+                 reuse_weights=None,
+                 depth_multiplier=None,
+                 weight_decay=0.0):
+        super().__init__(
+            'resnet_v1_50', resnet_v1_beta.resnet_v1_50_beta, is_training,
             filter_scale, features_stride, mid_downsample, batch_norm_trainable,
             reuse_weights, depth_multiplier, weight_decay)
