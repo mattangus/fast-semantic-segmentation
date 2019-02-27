@@ -1,5 +1,7 @@
 import numpy as np
 import tensorflow as tf
+import io
+import json 
 
 def get_valid(labels, ignore_label):
     ne = [tf.not_equal(labels, il) for il in ignore_label]

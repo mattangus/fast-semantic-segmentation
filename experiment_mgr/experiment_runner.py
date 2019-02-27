@@ -13,6 +13,7 @@ import cv2
 import sys
 import logging
 import traceback
+from io import StringIO
 
 from builders import model_builder, dataset_builder
 from post_process.mahalanobis import MahalProcessor
@@ -166,12 +167,13 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         return result
 
 
-def run_experiment(gpus, print_buffer, model_config, data_config,
+def run_experiment(gpus, model_config, data_config,
                     trained_checkpoint, pad_to_shape,
                     processor_type, annot_type, is_debug, **kwargs):
     had_error = None
     try:
         os.environ["CUDA_VISIBLE_DEVICES"] = gpus
+        print_buffer = StringIO()
         if not is_debug:
             sys.stdout = print_buffer
             sys.stderr = print_buffer

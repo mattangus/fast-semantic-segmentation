@@ -1,6 +1,7 @@
 from io import StringIO
 from abc import abstractmethod
 
+from experiment_mgr.experiment import Experiment, ExperimentDataset
 from third_party.doc_inherit import doc_inherit
 from . import db_helper as dbh
 
@@ -16,29 +17,6 @@ def _filter_already_run(arg_list):
             ret.append(run_args)
     
     return ret
-
-class RunnerArgs(object):
-
-    def __init__(self, buffer=None):
-        self.model_config = None
-        self.data_config = None
-        self.trained_checkpoint = None
-        self.pad_to_shape = None
-        self.processor_type = None
-        self.annot_type = None
-        self.kwargs = None
-        if buffer is None:
-            self.print_buffer = StringIO()
-        else:
-            self.print_buffer = None
-
-class ExperimentDataset(object):
-
-    def __init__(self, train_set, eval_set=None):
-        self.train_set = train_set
-        self.eval_set = eval_set
-        if eval_set is None:
-            self.eval_set = train_set
 
 #ood
 sun_experiment_set = ExperimentDataset("configs/data/sun_train.config", "configs/data/sun_eval.config")
@@ -97,20 +75,22 @@ class MaxSoftmaxRunBuilder(RunnerBuilder):
 
     @doc_inherit
     def make_args(self, epsilon, t_value, train=True):
-        run_args = RunnerArgs()
-        run_args.model_config = "configs/model/pspnet_full_dim.config"
+        model_config = "configs/model/pspnet_full_dim.config"
         if train:
-            run_args.data_config = self.experiment_set.train_set
+            data_config = self.experiment_set.train_set
         else:
-            run_args.data_config = self.experiment_set.eval_set
-        run_args.trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
-        run_args.pad_to_shape = "1025,2049"
-        run_args.processor_type = "MaxSoftmax"
-        run_args.annot_type = self.annot_type
-        run_args.kwargs = {
+            data_config = self.experiment_set.eval_set
+        trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
+        pad_to_shape = "1025,2049"
+        processor_type = "MaxSoftmax"
+        annot_type = self.annot_type
+        kwargs = {
             "epsilon": epsilon,
             "t_value": t_value,
         }
+        run_args = Experiment(model_config, data_config,
+                trained_checkpoint, pad_to_shape,
+                processor_type, annot_type, kwargs)
         return run_args
 
     @doc_inherit
@@ -138,22 +118,24 @@ class MahalRunBuilder(RunnerBuilder):
     def make_args(self, epsilon,
             eval_dir="remote/eval_logs/resnet_dim/",
             global_cov=True, global_mean=False, train=True):
-        run_args = RunnerArgs()
-        run_args.model_config = "configs/model/pspnet_full_dim.config"
+        model_config = "configs/model/pspnet_full_dim.config"
         if train:
-            run_args.data_config = self.experiment_set.train_set
+            data_config = self.experiment_set.train_set
         else:
-            run_args.data_config = self.experiment_set.eval_set
-        run_args.trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
-        run_args.pad_to_shape = "1025,2049"
-        run_args.processor_type = "Mahal"
-        run_args.annot_type = self.annot_type
-        run_args.kwargs = {
+            data_config = self.experiment_set.eval_set
+        trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
+        pad_to_shape = "1025,2049"
+        processor_type = "Mahal"
+        annot_type = self.annot_type
+        kwargs = {
             "epsilon": epsilon,
             "eval_dir": eval_dir,
             "global_cov": global_cov,
             "global_mean": global_mean,
         }
+        run_args = Experiment(model_config, data_config,
+                trained_checkpoint, pad_to_shape,
+                processor_type, annot_type, kwargs)
         return run_args
 
     @doc_inherit
@@ -177,19 +159,21 @@ class DropoutRunBuilder(RunnerBuilder):
 
     @doc_inherit
     def make_args(self, num_runs, train=True):
-        run_args = RunnerArgs()
-        run_args.model_config = "configs/model/pspnet_dropout.config"
+        model_config = "configs/model/pspnet_dropout.config"
         if train:
-            run_args.data_config = self.experiment_set.train_set
+            data_config = self.experiment_set.train_set
         else:
-            run_args.data_config = self.experiment_set.eval_set
-        run_args.trained_checkpoint = "remote/train_logs/dropout/model.ckpt-31273"
-        run_args.pad_to_shape = "1025,2049"
-        run_args.processor_type = "Dropout"
-        run_args.annot_type = self.annot_type
-        run_args.kwargs = {
+            data_config = self.experiment_set.eval_set
+        trained_checkpoint = "remote/train_logs/dropout/model.ckpt-31273"
+        pad_to_shape = "1025,2049"
+        processor_type = "Dropout"
+        annot_type = self.annot_type
+        kwargs = {
             "num_runs": num_runs,
         }
+        run_args = Experiment(model_config, data_config,
+                trained_checkpoint, pad_to_shape,
+                processor_type, annot_type, kwargs)
         return run_args
 
     @doc_inherit
@@ -209,19 +193,21 @@ class ConfidenceRunBuilder(RunnerBuilder):
 
     @doc_inherit
     def make_args(self, epsilon, train=True):
-        run_args = RunnerArgs()
-        run_args.model_config = "configs/model/pspnet_confidence.config"
+        model_config = "configs/model/pspnet_confidence.config"
         if train:
-            run_args.data_config = self.experiment_set.train_set
+            data_config = self.experiment_set.train_set
         else:
-            run_args.data_config = self.experiment_set.eval_set
-        run_args.trained_checkpoint = "remote/train_logs/confidence/model.ckpt-13062"
-        run_args.pad_to_shape = "1025,2049"
-        run_args.processor_type = "Confidence"
-        run_args.annot_type = self.annot_type
-        run_args.kwargs = {
+            data_config = self.experiment_set.eval_set
+        trained_checkpoint = "remote/train_logs/confidence/model.ckpt-13062"
+        pad_to_shape = "1025,2049"
+        processor_type = "Confidence"
+        annot_type = self.annot_type
+        kwargs = {
             "epsilon": epsilon,
         }
+        run_args = Experiment(model_config, data_config,
+                trained_checkpoint, pad_to_shape,
+                processor_type, annot_type, kwargs)
         return run_args
 
     @doc_inherit
@@ -240,7 +226,7 @@ class ConfidenceRunBuilder(RunnerBuilder):
 
 #     @doc_inherit
 #     def make_args(self, epsilon, t_value, train=True):
-#         run_args = RunnerArgs()
+#         run_args = Experiment()
 #         run_args.model_config = "configs/model/pspnet_full_dim.config"
 #         if train:
 #             run_args.data_config = "configs/data/sun_train.config"
