@@ -145,10 +145,6 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 elif key == 115: #s
                     break
 
-
-            
-
-
 def extract_images(gpus, model_config, data_config,
                     trained_checkpoint, pad_to_shape,
                     processor_type, annot_type, is_debug, **kwargs):

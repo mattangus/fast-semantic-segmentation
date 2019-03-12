@@ -19,7 +19,7 @@ if mode == drop:
     annot_type = "ood"
     kwargs = {"num_runs": 8,}
 
-    er.run_experiment(gpus, None, model_config, data_config,
+    er.run_experiment(gpus, model_config, data_config,
                         trained_checkpoint, pad_to_shape,
                         processor_type, annot_type, is_debug, **kwargs)
 
@@ -32,7 +32,7 @@ elif mode == conf:
     annot_type = "ood"
     kwargs = {"epsilon": 0.01}
 
-    er.run_experiment(gpus, None, model_config, data_config,
+    er.run_experiment(gpus, model_config, data_config,
                         trained_checkpoint, pad_to_shape,
                         processor_type, annot_type, is_debug, **kwargs)
 
@@ -47,7 +47,7 @@ elif mode == mahal:
     annot_type = "ood"
     kwargs = {"epsilon": 0.0, "eval_dir": eval_dir, "global_cov": True, "global_mean": False,}
 
-    er.run_experiment(gpus, None, model_config, data_config,
+    er.run_experiment(gpus, model_config, data_config,
                         trained_checkpoint, pad_to_shape,
                         processor_type, annot_type, is_debug, **kwargs)
 
@@ -60,6 +60,6 @@ elif mode == softmax:
     annot_type = "ood"
     kwargs = {"epsilon": 0.01, "t_value": 100}
 
-    er.run_experiment(gpus, None, model_config, data_config,
+    er.run_experiment(gpus, model_config, data_config,
                         trained_checkpoint, pad_to_shape,
                         processor_type, annot_type, is_debug, **kwargs)
