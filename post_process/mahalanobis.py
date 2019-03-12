@@ -10,7 +10,7 @@ from helpers import get_valid
 class MahalProcessor(pp.PostProcessor):
 
     def __init__(self, model, outputs_dict, num_classes,
-                    annot, image, ignore_label, process_annot,
+                    annot, image, path, ignore_label, process_annot,
                     num_gpus, batch_size,
                     #class specific
                     eval_dir, epsilon, global_cov, global_mean):
@@ -22,6 +22,7 @@ class MahalProcessor(pp.PostProcessor):
         self.num_classes = num_classes
         self.annot = annot
         self.image = image
+        self.path = path
         self.mean_value = 508.7571
         self.std_value = 77.60572284853058
         self.epsilon = epsilon
@@ -126,3 +127,7 @@ class MahalProcessor(pp.PostProcessor):
         results = metrics.get_metric_values(numpy_dict["metrics"])
 
         return results
+    
+    @doc_inherit
+    def get_output_image(self):
+        return self.prediction

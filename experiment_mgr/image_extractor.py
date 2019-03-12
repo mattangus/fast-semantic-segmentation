@@ -3,8 +3,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
-os.environ['TF_CPP_MIN_LOG_LEVEL']='3'
 import timeit
 import numpy as np
 import tensorflow as tf
@@ -75,32 +73,16 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                             annot_pl, placeholder_tensor, name_pl, ignore_label,
                             process_annot, num_gpu, batch, **kwargs)
 
-    # if processor_type == "MaxSoftmax":
-    #     processor = MaxSoftmaxProcessor(model, outputs, num_classes,
-    #                         annot_pl, placeholder_tensor,
-    #                         FLAGS.epsilon, FLAGS.t_value, ignore_label,
-    #                         ood_annot)
-    # elif processor_type == "Mahal":
-    #     processor = MahalProcessor(model, outputs, num_classes, annot_pl,
-    #                         placeholder_tensor, eval_dir, FLAGS.epsilon,
-    #                         FLAGS.global_cov, FLAGS.global_mean, ignore_label,
-    #                         ood_annot)
-    # else:
-    #     raise ValueError(str(processor_type) + " is an unknown processor")
-
     processor.post_process_ops()
 
     preprocess_input = processor.get_preprocessed()
 
-    input_fetch = [input_name, input_tensor, annot_tensor]
+    input_fetch = [name_pl, input_tensor, annot_tensor]
 
     fetch = processor.get_fetch_dict()
     feed = processor.get_feed_dict()
 
     num_step = num_images // batch
-
-    np.set_printoptions(threshold=2, edgeitems=1)
-    print_exclude = {"tp", "fp", "tn", "fn"}
 
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.per_process_gpu_memory_fraction=1.
@@ -108,7 +90,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     #config.gpu_options.allow_growth = True
     with tf.Session(config=config) as sess:
         init_feed = processor.get_init_feed()
-        sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()],init_feed)
+        sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()], init_feed)
 
         vars_noload = set(processor.get_vars_noload())
         vars_toload = [v for v in tf.global_variables() if v not in vars_noload]
@@ -116,12 +98,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         saver.restore(sess, trained_checkpoint_prefix)
 
         print("finalizing graph")
-
         sess.graph.finalize()
-
-        # temp_fw = tf.summary.FileWriter("temptb", graph=sess.graph)
-        # temp_fw.flush()
-        # temp_fw.close()
 
         #one sun image is bad
         num_step -= 1
@@ -150,73 +127,55 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
             feed_dict.update(feed)
 
-            res = {}
-            for f in fetch:
-                #print("running", f)
-                res.update(sess.run(f, feed_dict, options=run_options))
+            output_image = sess.run(fetch, feed_dict, options=run_options)
 
-            result = processor.post_process(res)
+            import pdb; pdb.set_trace()
 
-            elapsed = timeit.default_timer() - start_time
-            end = "\r"
-            if idx % 1 == 0:
-                #every now and then do regular print
-                end = "\n"
+            cv2.imshow("image", img_raw[0])
+            cv2.imshow("uncertainty", output_image[0,...,0])
+            
+            print(image_path[0].decode())
 
-            to_print = {}
-            for v in result:
-                if v not in print_exclude:
-                    to_print[v] = result[v]
-            print('{0:.4f} iter: {1}, {2}'.format(elapsed, idx+1, to_print), end=end)
-        print('{0:.4f} iter: {1}, {2}'.format(elapsed, idx+1, to_print))
-        return result
+            while True:
+                key = cv2.waitKey()
+                if key == 27: #escape
+                    break
+                elif key == 32: #space
+                    break
+                elif key == 115: #s
+                    break
 
 
-def run_experiment(gpus, model_config, data_config,
+            
+
+
+def extract_images(gpus, model_config, data_config,
                     trained_checkpoint, pad_to_shape,
                     processor_type, annot_type, is_debug, **kwargs):
-    had_error = None
-    try:
-        os.environ["CUDA_VISIBLE_DEVICES"] = gpus
-        print_buffer = StringIO()
-        if not is_debug:
-            sys.stdout = print_buffer
-            sys.stderr = print_buffer
 
-        pipeline_config = read_config(model_config, data_config)
+    os.environ["CUDA_VISIBLE_DEVICES"] = gpus
 
-        if pad_to_shape is not None and isinstance(pad_to_shape, str) :
-            pad_to_shape = [
-                int(dim) if dim != '-1' else None
-                    for dim in pad_to_shape.split(',')]
+    pipeline_config = read_config(model_config, data_config)
 
-        input_reader = pipeline_config.input_reader
-        input_reader.shuffle = False
-        ignore_label = input_reader.ignore_label
+    if pad_to_shape is not None and isinstance(pad_to_shape, str) :
+        pad_to_shape = [
+            int(dim) if dim != '-1' else None
+                for dim in pad_to_shape.split(',')]
 
-        num_classes, segmentation_model = model_builder.build(
-            pipeline_config.model, is_training=False, ignore_label=ignore_label)
-        with tf.device("cpu:0"):
-            dataset = dataset_builder.build(input_reader, 1)
+    input_reader = pipeline_config.input_reader
+    input_reader.shuffle = False
+    ignore_label = input_reader.ignore_label
 
-        num_gpu = len(gpus.split(","))
+    num_classes, segmentation_model = model_builder.build(
+        pipeline_config.model, is_training=False, ignore_label=ignore_label)
+    with tf.device("cpu:0"):
+        dataset = dataset_builder.build(input_reader, 1)
 
-        num_examples = sum([r.num_examples for r in input_reader.tf_record_input_reader])
+    num_gpu = len(gpus.split(","))
 
-        result = run_inference_graph(segmentation_model, trained_checkpoint, dataset,
-                            num_examples, ignore_label, pad_to_shape,
-                            num_classes, processor_type, annot_type, num_gpu, **kwargs)
-        had_error = False
-    except Exception as ex:
-        if is_debug:
-            raise ex
-        print(traceback.format_exc())
-        had_error = True
-        result = None
-    
-    sys.stdout = sys.__stdout__
-    sys.stderr = sys.__stderr__
-    tf.reset_default_graph()
+    num_examples = sum([r.num_examples for r in input_reader.tf_record_input_reader])
 
-    return print_buffer, result, had_error
+    run_inference_graph(segmentation_model, trained_checkpoint, dataset,
+                        num_examples, ignore_label, pad_to_shape,
+                        num_classes, processor_type, annot_type, num_gpu, **kwargs)
 
