@@ -10,7 +10,7 @@ from . import validation_metrics as metrics
 class MaxSoftmaxProcessor(pp.PostProcessor):
     
     def __init__(self, model, outputs_dict, num_classes,
-                    annot, image, ignore_label, process_annot,
+                    annot, image, path, ignore_label, process_annot,
                     num_gpus, batch_size,
                     #class specific
                     epsilon, t_value):
@@ -18,6 +18,7 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
         self.num_classes = num_classes
         self.annot = annot
         self.image = image
+        self.path = path
         self.epsilon = epsilon
         self.t_value = t_value
         self.ignore_label = ignore_label
@@ -34,10 +35,13 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
         pred_shape = main_pred.shape.as_list()
 
         weights = tf.to_float(get_valid(self.annot, self.ignore_label))
+        self.annot_before = self.annot
         self.annot, self.num_classes = self._process_annot(self.annot, main_pred, self.num_classes)
 
         self.interp_logits = tf.image.resize_bilinear(unscaled_logits, pred_shape[1:3])
-        self.prediction = 1.0 - tf.reduce_max(tf.nn.softmax(self.interp_logits/self.t_value), -1, keepdims=True)
+        softmax = tf.nn.softmax(self.interp_logits/self.t_value)
+        self.pred = tf.argmax(softmax, -1)
+        self.prediction = 1.0 - tf.reduce_max(softmax, -1, keepdims=True)
         self.metrics, self.update = metrics.get_metric_ops(self.annot, self.prediction, weights)
 
     @doc_inherit

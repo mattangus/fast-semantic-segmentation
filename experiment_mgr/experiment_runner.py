@@ -59,6 +59,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     input_shape = [None] + input_tensor.shape.as_list()[1:]
 
+    name_pl = tf.placeholder(tf.string, input_name.shape.as_list(), name="name_pl")
     annot_pl = tf.placeholder(tf.float32, annot_tensor.shape.as_list(), name="annot_pl")
     outputs, placeholder_tensor = deploy_segmentation_inference_graph(
         model=model,
@@ -71,7 +72,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     processor_class = processor_dict[processor_type]
 
     processor = processor_class(model, outputs, num_classes,
-                            annot_pl, placeholder_tensor, ignore_label,
+                            annot_pl, placeholder_tensor, name_pl, ignore_label,
                             process_annot, num_gpu, batch, **kwargs)
 
     # if processor_type == "MaxSoftmax":
@@ -131,16 +132,17 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
             annot_raw = inputs[2]
             img_raw = inputs[1]
-            image_path = inputs[0][0].decode("utf-8")
+            image_path = inputs[0]
 
             if preprocess_input is not None:
-                processed_input = sess.run(preprocess_input, feed_dict={placeholder_tensor: img_raw, annot_pl: annot_raw})
+                processed_input = sess.run(preprocess_input, feed_dict={placeholder_tensor: img_raw, annot_pl: annot_raw, name_pl: image_path})
             else:
                 processed_input = img_raw
 
             feed_dict = {
                 placeholder_tensor: processed_input,
-                annot_pl: annot_raw
+                annot_pl: annot_raw,
+                name_pl: image_path,
             }
 
             feed_dict.update(feed)

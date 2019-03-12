@@ -16,7 +16,7 @@ def _safe_div(a,b):
 class DropoutProcessor(pp.PostProcessor):
     
     def __init__(self, model, outputs_dict, num_classes,
-                    annot, image, ignore_label, process_annot,
+                    annot, image, path, ignore_label, process_annot,
                     num_gpus, batch_size,
                     #class specific
                     num_runs):
@@ -24,6 +24,7 @@ class DropoutProcessor(pp.PostProcessor):
         self.num_classes = num_classes
         self.annot = annot
         self.image = image
+        self.path = path
         self._num_runs = num_runs
         self.ignore_label = ignore_label
         self._process_annot = process_annot
@@ -86,7 +87,7 @@ class DropoutProcessor(pp.PostProcessor):
         fetch = []
         # for i in range(self._num_runs):
         #     # fetch.append({i: self.update_op})
-        fetch.append({"res": self.norm_variance,})
+        fetch.append({"res": self.interp_variance})
         fetch.append({"update": self.update})
         fetch.append({"metrics": self.metrics})
         # fetch.append({"reset": self.reset_op})
@@ -101,7 +102,7 @@ class DropoutProcessor(pp.PostProcessor):
         # import matplotlib.pyplot as plt
         # plt.imshow(numpy_dict["res"][0,...,0])
         # plt.show()
-        # import pdb; pdb.set_trace()
+        import pdb; pdb.set_trace()
         results = metrics.get_metric_values(numpy_dict["metrics"])
 
         return results

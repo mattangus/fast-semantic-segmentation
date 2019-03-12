@@ -5,21 +5,21 @@ conf = 1
 mahal = 2
 softmax = 3
 
-mode = conf
+mode = drop
 
-gpus = "2"
+gpus = "0"
 is_debug = True
 
 if mode == drop:
     model_config = "configs/model/pspnet_dropout.config"
-    data_config = "configs/data/sun_eval.config"
+    data_config = "configs/data/cityscapes_eval.config"
     trained_checkpoint = "remote/train_logs/dropout/model.ckpt-31273"
     pad_to_shape = "1025,2049"
     processor_type = "Dropout"
     annot_type = "ood"
     kwargs = {"num_runs": 8,}
 
-    er.run_experiment(gpus, None, model_config, data_config,
+    er.run_experiment(gpus, model_config, data_config,
                         trained_checkpoint, pad_to_shape,
                         processor_type, annot_type, is_debug, **kwargs)
 
@@ -30,9 +30,9 @@ elif mode == conf:
     pad_to_shape = "1025,2049"
     processor_type = "Confidence"
     annot_type = "ood"
-    kwargs = {"epsilon": 0.01}
+    kwargs = {"epsilon": 0.0002}
 
-    er.run_experiment(gpus, None, model_config, data_config,
+    er.run_experiment(gpus, model_config, data_config,
                         trained_checkpoint, pad_to_shape,
                         processor_type, annot_type, is_debug, **kwargs)
 
@@ -40,26 +40,27 @@ elif mode == mahal:
     eval_dir = "remote/eval_logs/resnet_dim/"
 
     model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/sun_eval.config"
+    data_config = "configs/data/cityscapes_eval.config"
     trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
     pad_to_shape = "1025,2049"
     processor_type = "Mahal"
     annot_type = "ood"
     kwargs = {"epsilon": 0.0, "eval_dir": eval_dir, "global_cov": True, "global_mean": False,}
 
-    er.run_experiment(gpus, None, model_config, data_config,
+    er.run_experiment(gpus, model_config, data_config,
                         trained_checkpoint, pad_to_shape,
                         processor_type, annot_type, is_debug, **kwargs)
 
 elif mode == softmax:
-    model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/uniform_train.config"
-    trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
+    model_config = "configs/model/pspnet_full.config"
+    data_config = "configs/data/sun_eval.config"
+    trained_checkpoint = "remote/train_logs/resnet/model.ckpt-8293"
     pad_to_shape = "1025,2049"
     processor_type = "MaxSoftmax"
     annot_type = "ood"
-    kwargs = {"epsilon": 0.01, "t_value": 100}
+    kwargs = {"epsilon": 0.0002, "t_value": 5}
 
-    er.run_experiment(gpus, None, model_config, data_config,
+    er.run_experiment(gpus, model_config, data_config,
                         trained_checkpoint, pad_to_shape,
                         processor_type, annot_type, is_debug, **kwargs)
+                    

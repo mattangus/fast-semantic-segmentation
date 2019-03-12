@@ -16,7 +16,7 @@ def _safe_div(a,b):
 class ConfidenceProcessor(pp.PostProcessor):
 
     def __init__(self, model, outputs_dict, num_classes,
-                    annot, image, ignore_label, process_annot,
+                    annot, image, path, ignore_label, process_annot,
                     num_gpus, batch_size,
                     #class specific
                     epsilon):
@@ -24,6 +24,7 @@ class ConfidenceProcessor(pp.PostProcessor):
         self.num_classes = num_classes - 1
         self.annot = annot
         self.image = image
+        self.path = path
         self.epsilon = epsilon
         self.ignore_label = ignore_label
         self._process_annot = process_annot
@@ -51,6 +52,8 @@ class ConfidenceProcessor(pp.PostProcessor):
 
         conf_logits = tf.image.resize_bilinear(unscaled_logits[...,-1:], pred_shape[1:3])
 
+        self.prediction = main_pred
+
         tf.image.resize_bilinear(unscaled_logits[...,:-1], pred_shape[1:3])
 
         self.uncertainty = 1. - tf.nn.sigmoid(conf_logits)
@@ -76,7 +79,7 @@ class ConfidenceProcessor(pp.PostProcessor):
 
     @doc_inherit
     def get_fetch_dict(self):
-        fetch = [{"update": self.update}, {"metrics": self.metrics}]
+        fetch = [{"update": self.update}, {"metrics": self.metrics, "img": self.image, "uncert": self.uncertainty, "annot": self.annot_before}]
         return fetch
 
     @doc_inherit
