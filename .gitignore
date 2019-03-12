@@ -33,3 +33,5 @@ pspnet_trained/
 remote/
 train_gta_log/
 train_logs/
+
+*.sqlite*

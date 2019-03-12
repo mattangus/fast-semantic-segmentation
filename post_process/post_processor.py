@@ -64,6 +64,13 @@ class PostProcessor(object):
         """get feed dict to merge with master feed dict
         """
         pass
+    
+    @abstractmethod
+    def get_output_image(self):
+        """ get the output ood heat map
+        """
+        pass
+
 
 #TODO Delete this example:
 # from . import post_processor as pp

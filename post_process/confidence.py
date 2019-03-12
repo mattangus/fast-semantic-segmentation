@@ -16,7 +16,7 @@ def _safe_div(a,b):
 class ConfidenceProcessor(pp.PostProcessor):
 
     def __init__(self, model, outputs_dict, num_classes,
-                    annot, image, ignore_label, process_annot,
+                    annot, image, path, ignore_label, process_annot,
                     num_gpus, batch_size,
                     #class specific
                     epsilon):
@@ -24,6 +24,7 @@ class ConfidenceProcessor(pp.PostProcessor):
         self.num_classes = num_classes - 1
         self.annot = annot
         self.image = image
+        self.path = path
         self.epsilon = epsilon
         self.ignore_label = ignore_label
         self._process_annot = process_annot
@@ -88,3 +89,7 @@ class ConfidenceProcessor(pp.PostProcessor):
         results = metrics.get_metric_values(numpy_dict["metrics"])
 
         return results
+    
+    @doc_inherit
+    def get_output_image(self):
+        return self.uncertainty

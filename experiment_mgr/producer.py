@@ -1,39 +1,24 @@
 from . import experiment_runner
 from multiprocessing import Process, Pool, Manager
-from io import StringIO
 from functools import partial
 import pickle
 import tqdm
 
 from . import experiment_factory
 from . import db_helper as dbh
-
-class Experiment(object):
-
-    def __init__(self, buffer=None):
-        self.model_config = None
-        self.data_config = None
-        self.trained_checkpoint = None
-        self.pad_to_shape = None
-        self.processor_type = None
-        self.annot_type = None
-        self.kwargs = None
-        if buffer is None:
-            self.print_buffer = StringIO()
-        else:
-            self.print_buffer = None
+from protos.experiment_pb2 import Experiment
 
 #transfer from previous method
-def _upload_from_file(file):
-    with open(file, "rb") as f:
-        results = pickle.load(f)
+# def _upload_from_file(file):
+#     with open(file, "rb") as f:
+#         results = pickle.load(f)
 
-    dbh._upload_legacy(results)
+#     dbh._upload_legacy(results)
 
 def launch_experiment(exp, q, is_debug):
     gpus = q.get()
     print("launching", exp.kwargs, "gpu", gpus)
-    res = experiment_runner.run_experiment(gpus, exp.print_buffer, exp.model_config, exp.data_config,
+    res = experiment_runner.run_experiment(gpus, exp.model_config, exp.data_config,
                     exp.trained_checkpoint, exp.pad_to_shape,
                     exp.processor_type, exp.annot_type, is_debug, **exp.kwargs)
     print("adding", gpus)
@@ -41,11 +26,6 @@ def launch_experiment(exp, q, is_debug):
     return res
 
 def main(gpus, is_debug):
-    # _upload_from_file("mahal_res.pkl")
-    # _upload_from_file("odin_res.pkl")
-    # _upload_from_file("topmahal_res.pkl")
-    # _upload_from_file("topodin_res.pkl")
-
     # import pdb; pdb.set_trace()
     pool = Pool(len(gpus))
     m = Manager()

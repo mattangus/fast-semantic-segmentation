@@ -10,7 +10,7 @@ from . import validation_metrics as metrics
 class MaxSoftmaxProcessor(pp.PostProcessor):
     
     def __init__(self, model, outputs_dict, num_classes,
-                    annot, image, ignore_label, process_annot,
+                    annot, image, path, ignore_label, process_annot,
                     num_gpus, batch_size,
                     #class specific
                     epsilon, t_value):
@@ -18,6 +18,7 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
         self.num_classes = num_classes
         self.annot = annot
         self.image = image
+        self.path = path
         self.epsilon = epsilon
         self.t_value = t_value
         self.ignore_label = ignore_label
@@ -69,3 +70,7 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
         results = metrics.get_metric_values(numpy_dict["metrics"])
 
         return results
+    
+    @doc_inherit
+    def get_output_image(self):
+        return self.prediction
