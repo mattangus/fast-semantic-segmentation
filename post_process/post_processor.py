@@ -71,6 +71,12 @@ class PostProcessor(object):
         """
         pass
 
+    @abstractmethod
+    def get_prediction(self):
+        """ get the prediction map (cityscapes classes)
+        """
+        pass
+
 
 #TODO Delete this example:
 # from . import post_processor as pp

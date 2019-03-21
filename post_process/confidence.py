@@ -52,7 +52,8 @@ class ConfidenceProcessor(pp.PostProcessor):
 
         conf_logits = tf.image.resize_bilinear(unscaled_logits[...,-1:], pred_shape[1:3])
 
-        tf.image.resize_bilinear(unscaled_logits[...,:-1], pred_shape[1:3])
+        self.prediction_logits = tf.image.resize_bilinear(unscaled_logits[...,:-1], pred_shape[1:3])
+        self.prediction = tf.expand_dims(tf.argmax(self.prediction_logits, -1), -1)
 
         self.uncertainty = 1. - tf.nn.sigmoid(conf_logits)
 
@@ -93,3 +94,7 @@ class ConfidenceProcessor(pp.PostProcessor):
     @doc_inherit
     def get_output_image(self):
         return self.uncertainty
+
+    @doc_inherit
+    def get_prediction(self):
+        return self.prediction

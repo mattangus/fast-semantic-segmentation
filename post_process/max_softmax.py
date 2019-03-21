@@ -74,3 +74,7 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
     @doc_inherit
     def get_output_image(self):
         return self.prediction
+    
+    @doc_inherit
+    def get_prediction(self):
+        return self.outputs_dict[self.model.main_class_predictions_key]
