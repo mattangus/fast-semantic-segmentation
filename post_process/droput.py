@@ -110,3 +110,7 @@ class DropoutProcessor(pp.PostProcessor):
     @doc_inherit
     def get_output_image(self):
         return self.norm_variance
+    
+    @doc_inherit
+    def get_prediction(self):
+        return self.prediction
