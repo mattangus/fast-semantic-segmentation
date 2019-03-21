@@ -89,13 +89,13 @@ class MahalProcessor(pp.PostProcessor):
     @doc_inherit
     def post_process_ops(self):
         main_pred = self.outputs_dict[self.model.main_class_predictions_key]
-        weights = tf.to_float(get_valid(self.annot, self.ignore_label))
+        self.weights = tf.to_float(get_valid(self.annot, self.ignore_label))
 
 
         with tf.device(self.logit_gpu):
             self._process_logits()
             self.annot, self.num_classes = self._process_annot(self.annot, main_pred, self.num_classes)
-            self.metrics, self.update = metrics.get_metric_ops(self.annot, self.prediction, weights)
+            self.metrics, self.update = metrics.get_metric_ops(self.annot, self.prediction, self.weights)
 
     @doc_inherit
     def get_init_feed(self):
@@ -135,3 +135,7 @@ class MahalProcessor(pp.PostProcessor):
     @doc_inherit
     def get_prediction(self):
         return self.outputs_dict[self.model.main_class_predictions_key]
+    
+    @doc_inherit
+    def get_weights(self):
+        return self.weights

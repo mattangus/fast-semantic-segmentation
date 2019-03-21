@@ -57,7 +57,7 @@ class DropoutProcessor(pp.PostProcessor):
         self.interp_variance = tf.reduce_mean(self.all_variance, -1, keepdims=True)
 
         #get weights and new annot from predictions
-        weights = tf.to_float(get_valid(self.annot, self.ignore_label))
+        self.weights = tf.to_float(get_valid(self.annot, self.ignore_label))
         self.annot, self.num_classes = self._process_annot(self.annot, self.prediction, self.num_classes)
 
         #Popoviciu's inequality: var[X] <= (max - min)^2/4
@@ -68,7 +68,7 @@ class DropoutProcessor(pp.PostProcessor):
         self.norm_variance = tf.nn.sigmoid((self.interp_variance - max_var) / max_var)
 
         with tf.device(self.pre_process_gpu):
-            self.metrics, self.update = metrics.get_metric_ops(self.annot, self.norm_variance, weights)
+            self.metrics, self.update = metrics.get_metric_ops(self.annot, self.norm_variance, self.weights)
 
     @doc_inherit
     def get_init_feed(self):
@@ -114,3 +114,7 @@ class DropoutProcessor(pp.PostProcessor):
     @doc_inherit
     def get_prediction(self):
         return self.prediction
+        
+    @doc_inherit
+    def get_weights(self):
+        return self.weights

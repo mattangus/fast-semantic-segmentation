@@ -36,12 +36,12 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
         pred_shape = main_pred.shape.as_list()
         unscaled_logits.set_shape([self.batch_size] + unscaled_logits.shape.as_list()[1:])
 
-        weights = tf.to_float(get_valid(self.annot, self.ignore_label))
+        self.weights = tf.to_float(get_valid(self.annot, self.ignore_label))
         self.annot, self.num_classes = self._process_annot(self.annot, main_pred, self.num_classes)
 
         self.interp_logits = tf.image.resize_bilinear(unscaled_logits, pred_shape[1:3])
         self.prediction = 1.0 - tf.reduce_max(tf.nn.softmax(self.interp_logits/self.t_value), -1, keepdims=True)
-        self.metrics, self.update = metrics.get_metric_ops(self.annot, self.prediction, weights)
+        self.metrics, self.update = metrics.get_metric_ops(self.annot, self.prediction, self.weights)
 
     @doc_inherit
     def get_init_feed(self):
@@ -80,3 +80,7 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
     @doc_inherit
     def get_prediction(self):
         return self.outputs_dict[self.model.main_class_predictions_key]
+    
+    @doc_inherit
+    def get_weights(self):
+        return self.weights

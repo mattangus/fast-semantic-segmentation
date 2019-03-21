@@ -76,6 +76,12 @@ class PostProcessor(object):
         """ get the prediction map (cityscapes classes)
         """
         pass
+    
+    @abstractmethod
+    def get_weights(self):
+        """ get the weights used for metrics
+        """
+        pass
 
 
 #TODO Delete this example:

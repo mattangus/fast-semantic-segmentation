@@ -98,3 +98,7 @@ class ConfidenceProcessor(pp.PostProcessor):
     @doc_inherit
     def get_prediction(self):
         return self.prediction
+    
+    @doc_inherit
+    def get_weights(self):
+        return self.weights

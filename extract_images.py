@@ -1,14 +1,21 @@
 from experiment_mgr import image_extractor as ie
+import argparse
 
-drop = 0
-conf = 1
-mahal = 2
-softmax = 3
+parser = argparse.ArgumentParser()
+parser.add_argument("ptype", type=int)
+args = parser.parse_args()
+
+assert args.ptype in [0,1,2,3,4]
+
+drop = 0 #
+conf = 1 #
+mahal = 2 #
+softmax = 3 #
 odin = 4
 
-mode = conf
+mode = args.ptype
 
-gpus = "2"
+gpus = "0"
 is_debug = True
 
 if mode == drop:
@@ -18,7 +25,7 @@ if mode == drop:
     pad_to_shape = "1025,2049"
     processor_type = "Dropout"
     annot_type = "ood"
-    kwargs = {"num_runs": 8,}
+    kwargs = {"num_runs": 6,}
 
     ie.extract_images(gpus, model_config, data_config,
                         trained_checkpoint, pad_to_shape,
@@ -54,7 +61,7 @@ elif mode == mahal:
 
 elif mode == softmax:
     model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/uniform_train.config"
+    data_config = "configs/data/sun_eval.config"
     trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
     pad_to_shape = "1025,2049"
     processor_type = "MaxSoftmax"
@@ -67,12 +74,12 @@ elif mode == softmax:
 
 elif mode == odin:
     model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/uniform_train.config"
+    data_config = "configs/data/sun_eval.config"
     trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
     pad_to_shape = "1025,2049"
-    processor_type = "MaxSoftmax"
+    processor_type = "ODIN"
     annot_type = "ood"
-    kwargs = {"epsilon": 0.01, "t_value": 100}
+    kwargs = {"epsilon": 0.00002, "t_value": 10}
 
     ie.extract_images(gpus, model_config, data_config,
                         trained_checkpoint, pad_to_shape,
