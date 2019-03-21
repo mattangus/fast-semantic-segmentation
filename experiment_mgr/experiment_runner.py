@@ -39,9 +39,20 @@ annot_dict = {
 processor_dict = {
     "Mahal": MahalProcessor,
     "MaxSoftmax": MaxSoftmaxProcessor,
+    "ODIN": MaxSoftmaxProcessor,
     "Dropout": DropoutProcessor,
     "Confidence": ConfidenceProcessor,
 }
+
+def get_median(v):
+    v = tf.reshape(v, [-1])
+    l = v.get_shape()[0]
+    mid = l//2 + 1
+    val = tf.nn.top_k(v, mid).values
+    if l % 2 == 1:
+        return val[-1]
+    else:
+        return 0.5 * (val[-1] + val[-2])
 
 def run_inference_graph(model, trained_checkpoint_prefix,
                         dataset, num_images, ignore_label, pad_to_shape,
@@ -96,6 +107,10 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
     fetch = processor.get_fetch_dict()
     feed = processor.get_feed_dict()
+    ood_values = processor.get_output_image()
+    ood_mean = tf.reduce_mean(ood_values)
+    ood_median = get_median(ood_values)
+    pct_ood_gt = tf.reduce_mean(processor.annot)
 
     num_step = num_images // batch
 
@@ -156,6 +171,9 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 res.update(sess.run(f, feed_dict, options=run_options))
 
             result = processor.post_process(res)
+
+            cur_point = sess.run([pct_ood_gt, ood_mean, ood_median], feed_dict)
+            print(cur_point)
 
             elapsed = timeit.default_timer() - start_time
             end = "\r"

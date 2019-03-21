@@ -149,7 +149,8 @@ def get_top_from_config(config, exclude_fn=None):
 
     exps = set()
     for metric, ind in [("auroc",-1), ("aupr", -1), ("fpr_at_tpr",0), ("detection_error",0), ("max_iou", -1)]:
-        ex = sorted(results, key=lambda x: x.__data__[metric])[ind]
+        exs = sorted(results, key=lambda x: x.__data__[metric])
+        ex = exs[ind]
         exps.add(ex)
 
     return list(exps)
