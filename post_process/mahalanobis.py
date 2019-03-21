@@ -91,7 +91,6 @@ class MahalProcessor(pp.PostProcessor):
         main_pred = self.outputs_dict[self.model.main_class_predictions_key]
         weights = tf.to_float(get_valid(self.annot, self.ignore_label))
 
-
         with tf.device(self.logit_gpu):
             self._process_logits()
             self.annot, self.num_classes = self._process_annot(self.annot, main_pred, self.num_classes)
