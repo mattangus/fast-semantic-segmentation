@@ -252,9 +252,6 @@ class MahalProcessor(pp.PostProcessor):
         # import pdb; pdb.set_trace()
 
         return results
-
-
-        return results
     
     @doc_inherit
     def get_output_image(self):
