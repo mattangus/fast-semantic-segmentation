@@ -23,6 +23,7 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
         self.t_value = t_value
         self.ignore_label = ignore_label
         self._process_annot = process_annot
+        self.batch_size = batch_size
 
         self.pre_process_gpu = "gpu:0"
         if num_gpus > 1:
@@ -33,6 +34,7 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
         main_pred = self.outputs_dict[self.model.main_class_predictions_key]
         unscaled_logits = self.outputs_dict[self.model.unscaled_logits_key]
         pred_shape = main_pred.shape.as_list()
+        unscaled_logits.set_shape([self.batch_size] + unscaled_logits.shape.as_list()[1:])
 
         weights = tf.to_float(get_valid(self.annot, self.ignore_label))
         self.annot, self.num_classes = self._process_annot(self.annot, main_pred, self.num_classes)
