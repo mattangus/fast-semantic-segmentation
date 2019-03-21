@@ -160,7 +160,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             feed_dict = {
                 placeholder_tensor: processed_input,
                 annot_pl: annot_raw,
-                name_pl: image_path
+                name_pl: image_path,
             }
 
             feed_dict.update(feed)

@@ -113,11 +113,12 @@ class ODINRunBuilder(RunnerBuilder):
     @doc_inherit
     def make_args(self, epsilon, t_value, train=True):
         model_config = "configs/model/pspnet_full_dim.config"
+        model_config = "configs/model/pspnet_full.config"
         if train:
             data_config = self.experiment_set.train_set
         else:
             data_config = self.experiment_set.eval_set
-        trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
+        trained_checkpoint = "remote/train_logs/resnet/model.ckpt-8293"
         pad_to_shape = "1025,2049"
         processor_type = "ODIN"
         annot_type = self.annot_type

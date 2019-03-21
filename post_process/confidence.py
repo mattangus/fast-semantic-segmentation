@@ -52,8 +52,9 @@ class ConfidenceProcessor(pp.PostProcessor):
 
         conf_logits = tf.image.resize_bilinear(unscaled_logits[...,-1:], pred_shape[1:3])
 
-        self.prediction_logits = tf.image.resize_bilinear(unscaled_logits[...,:-1], pred_shape[1:3])
-        self.prediction = tf.expand_dims(tf.argmax(self.prediction_logits, -1), -1)
+        self.prediction = main_pred
+
+        tf.image.resize_bilinear(unscaled_logits[...,:-1], pred_shape[1:3])
 
         self.uncertainty = 1. - tf.nn.sigmoid(conf_logits)
 
@@ -78,7 +79,7 @@ class ConfidenceProcessor(pp.PostProcessor):
 
     @doc_inherit
     def get_fetch_dict(self):
-        fetch = [{"update": self.update}, {"metrics": self.metrics}]
+        fetch = [{"update": self.update}, {"metrics": self.metrics, "img": self.image, "uncert": self.uncertainty, "annot": self.annot_before}]
         return fetch
 
     @doc_inherit

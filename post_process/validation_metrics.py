@@ -2,13 +2,18 @@ import tensorflow as tf
 import numpy as np
 import sklearn as sk
 
-num_thresholds = 400
+num_thresholds = 500
 eps = 1e-7
 
-def get_metric_ops(annot, prediction, weights):
+def _disc(n):
+    if n % 2 == 0:
+        n -= 1
+    n = int((n - 1)/2)
+    y,x = np.ogrid[-n: n+1, -n: n+1]
+    mask = x**2+y**2 <= n**2
+    return mask.astype(np.float32)
 
-    res, update = tf.contrib.metrics.precision_recall_at_equal_thresholds(tf.cast(annot, tf.bool),prediction,weights,num_thresholds, name="ConfMat")
-
+def _get_metric_from_res(res):
     tp = res.tp
     fp = res.fp
     tn = res.tn
@@ -35,13 +40,31 @@ def get_metric_ops(annot, prediction, weights):
         "tn": tn,
         "fn": fn,
     }
+    return metrics
 
-    return metrics, update
+pr_values = tf.contrib.metrics.precision_recall_at_equal_thresholds
+
+def get_metric_ops(annot, prediction, weights):
+
+    with tf.variable_scope("test_metric"):
+        kern = np.expand_dims(_disc(11), -1)
+        if prediction._rank() != 4:
+            prediction = tf.expand_dims(prediction,-1)
+        erode = tf.nn.erosion2d(prediction, kern, [1,1,1,1], [1,1,1,1], "SAME")
+        new_pred = tf.sqrt(tf.nn.dilation2d(erode, kern, [1,1,1,1], [1,1,1,1], "SAME")*prediction)
+        test_res, test_update = pr_values(tf.cast(annot, tf.bool),new_pred,weights,num_thresholds, name="TestConfMat")
+        test_metrics = _get_metric_from_res(test_res)
+
+    res, update = pr_values(tf.cast(annot, tf.bool),prediction,weights,num_thresholds, name="ConfMat")
+
+    metrics = _get_metric_from_res(res)
+
+    return {"og": metrics, "test": test_metrics}, tf.group([update, test_update])
 
 def _auc(points):
     return -np.trapz(points[:,1], points[:,0])
 
-def get_metric_values(metrics):
+def _process_metrics(metrics):
     roc = metrics["roc"]
     pr = metrics["pr"]
     iou = metrics["iou"]
@@ -85,5 +108,22 @@ def get_metric_values(metrics):
         "tn": tn,
         "fn": fn,
     }
+
+    return ret
+
+def get_metric_values(metrics):
+
+    test_metrics = metrics["test"]
+    metrics = metrics["og"]
+
+    ret = _process_metrics(metrics)
+
+    test_ret = _process_metrics(test_metrics)
+
+    ret["test_auroc"] = test_ret["auroc"]
+    ret["test_aupr"] = test_ret["aupr"]
+    ret["test_max_iou"] = test_ret["max_iou"]
+    ret["test_fpr"] = test_ret["fpr_at_tpr"]
+    ret["test_de"] = test_ret["detection_error"]
 
     return ret
