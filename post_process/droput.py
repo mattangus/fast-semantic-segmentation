@@ -102,7 +102,7 @@ class DropoutProcessor(pp.PostProcessor):
         # import matplotlib.pyplot as plt
         # plt.imshow(numpy_dict["res"][0,...,0])
         # plt.show()
-        import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
         results = metrics.get_metric_values(numpy_dict["metrics"])
 
         return results

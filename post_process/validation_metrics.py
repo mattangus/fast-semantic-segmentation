@@ -120,10 +120,14 @@ def get_metric_values(metrics):
 
     test_ret = _process_metrics(test_metrics)
 
-    ret["test_auroc"] = test_ret["auroc"]
-    ret["test_aupr"] = test_ret["aupr"]
-    ret["test_max_iou"] = test_ret["max_iou"]
-    ret["test_fpr"] = test_ret["fpr_at_tpr"]
-    ret["test_de"] = test_ret["detection_error"]
+    diff = {}
+    for key in ret:
+        diff[key] = test_ret[key] - ret[key]
 
-    return ret
+    # ret["test_auroc"] = test_ret["auroc"]
+    # ret["test_aupr"] = test_ret["aupr"]
+    # ret["test_max_iou"] = test_ret["max_iou"]
+    # ret["test_fpr"] = test_ret["fpr_at_tpr"]
+    # ret["test_de"] = test_ret["detection_error"]
+
+    return diff

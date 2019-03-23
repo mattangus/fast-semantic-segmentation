@@ -120,7 +120,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.per_process_gpu_memory_fraction=1.
     run_options = tf.RunOptions(report_tensor_allocations_upon_oom = True)
-    #config.gpu_options.allow_growth = True
+    config.gpu_options.allow_growth = True
     with tf.Session(config=config) as sess:
         init_feed = processor.get_init_feed()
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()],init_feed)
@@ -172,8 +172,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
             result = processor.post_process(res)
 
-            cur_point = sess.run([pct_ood_gt, ood_mean, ood_median], feed_dict)
-            print(cur_point)
+            # cur_point = sess.run([pct_ood_gt, ood_mean, ood_median], feed_dict)
+            # print(cur_point)
 
             elapsed = timeit.default_timer() - start_time
             end = "\r"

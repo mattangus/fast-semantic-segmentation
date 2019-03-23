@@ -128,32 +128,32 @@ class MahalProcessor(pp.PostProcessor):
     def post_process(self, numpy_dict):
         results = metrics.get_metric_values(numpy_dict["metrics"])
 
-        import matplotlib.pyplot as plt
-        from skimage.segmentation import mark_boundaries
-        from skimage.segmentation import slic
+        # import matplotlib.pyplot as plt
+        # from skimage.segmentation import mark_boundaries
+        # from skimage.segmentation import slic
 
-        import torch
-        import torch.nn as nn
-        import torch.nn.functional as F
-        import torch.optim as optim
+        # import torch
+        # import torch.nn as nn
+        # import torch.nn.functional as F
+        # import torch.optim as optim
 
-        import cv2
+        # import cv2
 
-        img = numpy_dict["input"][0].astype(np.uint8)
-        uncert = numpy_dict["img"][0,...]
-        pred = numpy_dict["pred"][0,...,0]
-        annot = numpy_dict["annot"][0,...,0]
-        path = numpy_dict["path"][0].decode()
-        depth = cv2.imread(path.replace("leftImg8bit", "disparity"), cv2.IMREAD_UNCHANGED)
+        # img = numpy_dict["input"][0].astype(np.uint8)
+        # uncert = numpy_dict["img"][0,...]
+        # pred = numpy_dict["pred"][0,...,0]
+        # annot = numpy_dict["annot"][0,...,0]
+        # path = numpy_dict["path"][0].decode()
+        # depth = cv2.imread(path.replace("leftImg8bit", "disparity"), cv2.IMREAD_UNCHANGED)
 
-        segs = slic(uncert.astype(np.float64), n_segments = 1500, compactness=0.05, sigma = 0.01)
+        # segs = slic(uncert.astype(np.float64), n_segments = 1500, compactness=0.05, sigma = 0.01)
         
-        class_edge = cv2.Canny(pred.astype(np.uint8), 0,0)
-        class_dtform = cv2.distanceTransform(255 - class_edge, distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
-        border_probs = 1/np.sqrt(class_dtform)
-        border_probs[class_dtform == 0] = np.nanmax(border_probs)
-        border_probs[class_dtform == 0] = 1
-        border_probs *= 0.99
+        # class_edge = cv2.Canny(pred.astype(np.uint8), 0,0)
+        # class_dtform = cv2.distanceTransform(255 - class_edge, distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)
+        # border_probs = 1/np.sqrt(class_dtform)
+        # border_probs[class_dtform == 0] = np.nanmax(border_probs)
+        # border_probs[class_dtform == 0] = 1
+        # border_probs *= 0.99
 
 
         # class Net(nn.Module):
@@ -210,7 +210,7 @@ class MahalProcessor(pp.PostProcessor):
 
         #     import pdb; pdb.set_trace()
 
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
 
         # import matplotlib.pyplot as plt
         # import cv2
