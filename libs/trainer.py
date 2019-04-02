@@ -353,7 +353,13 @@ def train_segmentation_model(create_model_fn,
                                         options=options,
                                         run_metadata=run_metadata)
             time_elapsed = time.time() - start_time
-            #import pdb; pdb.set_trace()
+            # graph = tf.get_default_graph()
+            # main_labels = graph.get_tensor_by_name('SegmentationLoss/ScaledLabels:0')
+            # label_out = sess.run(main_labels)
+            # if len(np.unique(label_out)) != 1:
+            #     print(label_out)
+            #     import pdb; pdb.set_trace()
+            #     print(label_out)
             if 'should_log' in train_step_kwargs:
                 if sess.run(train_step_kwargs['should_log']):
                     tf.logging.info(
@@ -388,6 +394,6 @@ def train_segmentation_model(create_model_fn,
             startup_delay_steps=startup_delay_steps,
             init_fn=init_fn,
             summary_op=summary_op,
-            save_summaries_secs=30,
+            save_summaries_secs=3,
             save_interval_secs=save_interval_secs,
             saver=saver)

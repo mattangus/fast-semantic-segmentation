@@ -9,6 +9,9 @@ message PreprocessingStep {
         RandomImageScale random_image_scale = 3;
         RandomCropImage random_image_crop = 4;
         RandomHorizontalFlip random_horizontal_flip = 5;
+        RandomHue random_hue = 6;
+        RandomSat random_sat = 7;
+        SaltAndPepper salt_and_pepper = 8;
     }
 }
 
@@ -53,3 +56,18 @@ message RandomCropImage {
 }
 
 message RandomHorizontalFlip {}
+
+message RandomHue {
+    optional float max_delta = 1 [default=0.2];
+}
+
+
+message RandomSat {
+    optional float min_scale = 1 [default=0.9];
+    optional float max_scale = 2 [default=1.1];
+}
+
+message SaltAndPepper {
+    optional float corrupt_ratio = 1 [default=0.004];
+    optional int32 kern_size = 2 [default=5];
+}

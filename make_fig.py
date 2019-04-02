@@ -9,12 +9,17 @@ import sys
 annot_files = glob("exported/Dropout/annot/*.png")
 image_files = glob("exported/Dropout/image/*.png")
 prediction_files = glob("exported/*/pred/*.png")
-uncert_files = glob("exported/*/map/*.png")
+uncert_files = glob("exported/*/map/*.exr")
+iou_files = glob("exported/*/iou/*.png")
+roc_files = glob("exported/*/roc/*.png")
+
+#fig_type = "raw"
+fig_type = "thresh"
 
 all_files = {}
 
-def get_image(path):
-    img = cv2.imread(path)
+def get_image(path, flags=cv2.IMREAD_COLOR):
+    img = cv2.imread(path, flags)
     return cv2.resize(img, (0,0), fx=0.2, fy=0.2)
 
 for af in annot_files:
@@ -38,6 +43,30 @@ for cur_f in uncert_files:
         all_files[base]["map"] = {name: cur_f}
     else:
         all_files[base]["map"][name] = cur_f
+
+for cur_f in uncert_files:
+    name = cur_f.split("/")[1]
+    base = os.path.basename(cur_f)
+    if "map" not in all_files[base]:
+        all_files[base]["map"] = {name: cur_f}
+    else:
+        all_files[base]["map"][name] = cur_f
+
+for cur_f in roc_files:
+    name = cur_f.split("/")[1]
+    base = os.path.basename(cur_f)
+    if "roc" not in all_files[base]:
+        all_files[base]["roc"] = {name: cur_f}
+    else:
+        all_files[base]["roc"][name] = cur_f
+
+for cur_f in iou_files:
+    name = cur_f.split("/")[1]
+    base = os.path.basename(cur_f)
+    if "iou" not in all_files[base]:
+        all_files[base]["iou"] = {name: cur_f}
+    else:
+        all_files[base]["iou"][name] = cur_f
 
 gray_values = np.arange(256, dtype=np.uint8)
 color_values = map(tuple, cv2.applyColorMap(gray_values, cv2.COLORMAP_JET).reshape(256, 3))
@@ -88,17 +117,39 @@ class FigMaker(object):
         elif key == 27: #esc
             sys.exit(0)
 
-    def make_row(self):
+    def make_row_thres(self):
+        f_name = self.all_keys[self.cur_file]
+        annot = get_image(self.all_files[f_name]["annot"])
+        img = get_image(self.all_files[f_name]["img"])
+
+        pred = get_image(self.all_files[f_name]["pred"]["MaxSoftmax"])
+        map_order = ["ODIN"]
+        ious = [get_image(self.all_files[f_name]["iou"][v]) for v in map_order]
+        rocs = [get_image(self.all_files[f_name]["roc"][v]) for v in map_order]
+
+        zeros = np.zeros((img.shape[:-1]))
+        # import pdb; pdb.set_trace()
+
+        iou_t = [np.stack([zeros, i[...,0], i[...,0]], -1).astype(np.uint8) for i in ious]
+        roc_t = [np.stack([zeros, i[...,0], i[...,0]], -1).astype(np.uint8) for i in rocs]
+
+        img_list = [img, annot] + iou_t + roc_t
+
+        bar = np.ones((img.shape[0], 2, 3),dtype=np.uint8)*255
+        result = [bar] * (len(img_list) * 2 - 1)
+        result[0::2] = img_list
+
+        disp = np.concatenate(result, 1)
+        return disp
+
+    def make_row_raw(self):
         f_name = self.all_keys[self.cur_file]
         annot = get_image(self.all_files[f_name]["annot"])
         img = get_image(self.all_files[f_name]["img"])
 
         pred = get_image(self.all_files[f_name]["pred"]["MaxSoftmax"])
         map_order = ["MaxSoftmax", "ODIN", "Mahal", "Confidence", "Dropout"]
-        maps = [get_image(self.all_files[f_name]["map"][v]) for v in map_order]
-
-        gscales = list(map(reverse_map, maps))
-        maps = list(map(lambda x: (cm.inferno(x)[...,:-1][...,::-1]*255).astype(np.uint8), gscales))
+        maps = [get_image(self.all_files[f_name]["map"][v], cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH) for v in map_order]
 
         img_list = [img, annot, pred] + maps
 
@@ -112,7 +163,10 @@ class FigMaker(object):
     def main_loop(self):
 
         while True:
-            self.cur_image = self.make_row()
+            if fig_type == "raw":
+                self.cur_image = self.make_row_raw()
+            elif fig_type == "thresh":
+                self.cur_image = self.make_row_thres()
 
             cv2.imshow("current", self.cur_image)
             if self.result is not None:
@@ -124,23 +178,3 @@ class FigMaker(object):
         
 fmaker = FigMaker(all_files)
 fmaker.main_loop()
-
-# for f_name in 
-
-#     cv2.imshow("disp", disp)
-
-#     # names = [v.split("/")[1] for v in sorted(all_files[f_name]["pred"].values())]
-
-#     # cv2.imshow("annot", annot)
-#     # cv2.imshow("img", img)
-
-#     # for n,p in zip(names,preds):
-#     #     cv2.imshow(n + "_pred", p)
-
-#     # for n,m in zip(names,gscales):
-#     #     temp = cm.viridis(m)[...,:-1]*255
-#     #     cv2.imshow(n + "_map", temp.astype(np.uint8))
-
-#     key = cv2.waitKey()
-#     if key == 27:
-#         break

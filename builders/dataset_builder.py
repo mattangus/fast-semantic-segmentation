@@ -58,11 +58,30 @@ def _create_tf_example_decoder(reader_config):
         input_image = decode_image_file(
             decoded["image/filename"],
             3, (height, width), (rheight, rwidth))
-        ground_truth_image = decode_image_file(
-            decoded["image/segmentation/filename"],
-            1, (height, width), (rheight, rwidth),
-            tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        
+        match = tf.strings.regex_full_match(decoded["image/segmentation/filename"], r".*\.png")
+        def label_decode():
+            return decode_image_file(
+                decoded["image/segmentation/filename"],
+                1, (height, width), (rheight, rwidth),
+                tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        def label_value():
+            valid_size = valid_imsize((height, width))
+            valid_resize = valid_imsize((rheight, rwidth))
 
+            if not valid_resize and valid_size:
+                shape = [height, width, 1]
+            elif valid_resize:
+                shape = [rheight, rwidth, 1]
+
+            ret = tf.ones(shape, dtype=tf.uint8)*254
+            # mult = tf.strings.to_number(decoded["image/segmentation/filename"], out_type=tf.int32)
+            # mult = tf.cast(mult, tf.uint8)
+            return ret
+
+        ground_truth_image = tf.cond(match,true_fn=label_decode,false_fn=label_value)
+
+        #ground_truth_image = tf.Print(ground_truth_image, [tf.reduce_mean(ground_truth_image)])
         items_to_handlers = {
             _IMAGE_FIELD: input_image,
             _IMAGE_NAME_FIELD: decoded["image/filename"],

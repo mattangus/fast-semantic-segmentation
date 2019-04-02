@@ -15,17 +15,17 @@ odin = 4
 
 mode = args.ptype
 
-gpus = "3"
+gpus = "0"
 is_debug = True
 
 if mode == drop:
     model_config = "configs/model/pspnet_dropout.config"
-    data_config = "configs/data/wild_eval.config"
+    data_config = "configs/data/uniform_eval.config"
     trained_checkpoint = "remote/train_logs/dropout/model.ckpt-31273"
     pad_to_shape = "1025,2049"
     processor_type = "Dropout"
     annot_type = "ood"
-    kwargs = {"num_runs": 4,}
+    kwargs = {"num_runs": 5,}
 
     er.run_experiment(gpus, model_config, data_config,
                         trained_checkpoint, pad_to_shape,
@@ -33,7 +33,7 @@ if mode == drop:
 
 elif mode == conf:
     model_config = "configs/model/pspnet_confidence.config"
-    data_config = "configs/data/wild_eval.config"
+    data_config = "configs/data/uniform_eval.config"
     trained_checkpoint = "remote/train_logs/confidence/model.ckpt-13062"
     pad_to_shape = "1025,2049"
     processor_type = "Confidence"
@@ -48,7 +48,7 @@ elif mode == mahal:
     eval_dir = "remote/eval_logs/resnet_dim/"
 
     model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/wild_eval.config"
+    data_config = "configs/data/uniform_eval.config"
     trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
     pad_to_shape = "1025,2049"
     processor_type = "Mahal"
@@ -61,7 +61,7 @@ elif mode == mahal:
 
 elif mode == softmax:
     model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/wild_eval.config"
+    data_config = "configs/data/uniform_eval.config"
     trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
     pad_to_shape = "1025,2049"
     processor_type = "MaxSoftmax"
@@ -74,7 +74,7 @@ elif mode == softmax:
 
 elif mode == softmax:
     model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/wild_eval.config"
+    data_config = "configs/data/uniform_eval.config"
     trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
     pad_to_shape = "1025,2049"
     processor_type = "ODIN"

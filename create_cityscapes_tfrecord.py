@@ -29,7 +29,11 @@ tf.flags.DEFINE_string('split_type', '',
 tf.flags.DEFINE_string('output_dir', '', 'Output data directory.')
 tf.flags.DEFINE_string('name', '', 'output name.')
 
+tf.flags.DEFINE_integer("label_value", None, "value to pass as label")
+
 tf.flags.DEFINE_list('resize', None, 'w,h to resize to')
+
+tf.flags.DEFINE_bool("shuffle", True, "shuffle list")
 
 FLAGS = flags.FLAGS
 
@@ -71,6 +75,8 @@ def create_tf_example(image_path, label_path, image_dir='', is_jpeg=False):
     file_format = 'jpeg' if is_jpeg else 'png'
     full_image_path = os.path.join(image_dir, image_path)
     full_label_path = os.path.join(image_dir, label_path)
+    if FLAGS.label_value is not None:
+        full_label_path = str(FLAGS.label_value)
     # image = cv2.imread(full_image_path)
     # label = cv2.imread(full_label_path)
 
@@ -113,7 +119,8 @@ def create_tf_example(image_path, label_path, image_dir='', is_jpeg=False):
 def _create_tf_record(images, labels, output_path):
     options = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.GZIP)
     writer = tf.python_io.TFRecordWriter(output_path, options=options)
-    images, labels = zip(*random.sample(list(zip(images, labels)), len(images)))
+    if FLAGS.shuffle:
+        images, labels = zip(*random.sample(list(zip(images, labels)), len(images)))
     for idx, image in enumerate(images):
         if idx % 100 == 0:
             tf.logging.info('On image %d of %d', idx, len(images))
@@ -129,7 +136,7 @@ def main(_):
     assert FLAGS.split_type, '`split_type` missing.'
     assert FLAGS.name, "`name` missing"
     assert (FLAGS.cityscapes_dir) or \
-           (FLAGS.input_pattern and FLAGS.annot_pattern) or \
+           (FLAGS.input_pattern) or \
            (FLAGS.list_file), \
            'Must specify either `cityscapes_dir` or ' \
            '(`input_pattern` and `annot_pattern`) or `list_file`.'
@@ -157,13 +164,18 @@ def main(_):
         image_filenames, annot_filenames = zip(*content)
     else:
         image_filenames = glob.glob(FLAGS.input_pattern)
-        annot_filenames = glob.glob(FLAGS.annot_pattern)
+        if FLAGS.annot_pattern:
+            annot_filenames = glob.glob(FLAGS.annot_pattern)
+        else:
+            print("WARNING: no annotations supplied, using 254")
+            annot_filenames = image_filenames.copy()
     
         if len(image_filenames) != len(annot_filenames):
             print("images: ", len(image_filenames))
             print("annot: ", len(annot_filenames))
-            img_suff = {f.replace("/mnt/md0/samba/Release/V1.0/Real/", ""): f for f in image_filenames}
-            annot_suff = {f.replace("/mnt/md0/samba/Release/V1.0/Ids/", ""): f for f in annot_filenames}
+            
+            img_suff = {os.path.splitext(os.path.basename(f))[0]: f for f in image_filenames}
+            annot_suff = {os.path.splitext(os.path.basename(f))[0].replace("_train_id", ""): f for f in annot_filenames}
             image_filenames = [img_suff[f] for f in img_suff if f in annot_suff]
             annot_filenames = [annot_suff[f] for f in annot_suff if f in img_suff]
             print("new images:", len(image_filenames))

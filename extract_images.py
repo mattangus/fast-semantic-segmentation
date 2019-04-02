@@ -20,7 +20,7 @@ is_debug = True
 
 if mode == drop:
     model_config = "configs/model/pspnet_dropout.config"
-    data_config = "configs/data/sun_eval.config"
+    data_config = "configs/data/moose_eval.config"
     trained_checkpoint = "remote/train_logs/dropout/model.ckpt-31273"
     pad_to_shape = "1025,2049"
     processor_type = "Dropout"
@@ -33,7 +33,7 @@ if mode == drop:
 
 elif mode == conf:
     model_config = "configs/model/pspnet_confidence.config"
-    data_config = "configs/data/sun_eval.config"
+    data_config = "configs/data/moose_eval.config"
     trained_checkpoint = "remote/train_logs/confidence/model.ckpt-13062"
     pad_to_shape = "1025,2049"
     processor_type = "Confidence"
@@ -48,7 +48,7 @@ elif mode == mahal:
     eval_dir = "remote/eval_logs/resnet_dim/"
 
     model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/sun_eval.config"
+    data_config = "configs/data/moose_eval.config"
     trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
     pad_to_shape = "1025,2049"
     processor_type = "Mahal"
@@ -60,10 +60,23 @@ elif mode == mahal:
                         processor_type, annot_type, is_debug, **kwargs)
 
 elif mode == softmax:
-    model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/sun_eval.config"
-    trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
-    pad_to_shape = "1025,2049"
+    # 598
+    # 605
+    # 1232
+    # 1889
+    # 2555
+    # 3211
+    # 3872
+    # 3878
+    # 4509
+    # 5180
+    # 5858
+    # 6520
+    # 7183
+    model_config = "configs/model/pspnet_full.config"
+    data_config = "configs/data/moose_eval.config"
+    trained_checkpoint = "tune_all_logs/moo/model.ckpt-63"
+    pad_to_shape = "1025,1281"
     processor_type = "MaxSoftmax"
     annot_type = "ood"
     kwargs = {"epsilon": 0.0, "t_value": 1}
@@ -74,7 +87,7 @@ elif mode == softmax:
 
 elif mode == odin:
     model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/sun_eval.config"
+    data_config = "configs/data/moose_eval.config"
     trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
     pad_to_shape = "1025,2049"
     processor_type = "ODIN"

@@ -4,21 +4,26 @@ from protos import losses_pb2
 
 import helpers
 
+epsilon = 1.e-5
+
 def _softmax_classification_loss(predictions, labels, ignore_label):
-    flattened_labels = tf.reshape(labels, shape=[-1])
+    #flattened_labels = tf.reshape(labels, shape=[-1])
     num_classes = predictions.get_shape().as_list()[-1]
-    predictions = tf.reshape(predictions, [-1, num_classes])
+    #predictions = tf.reshape(predictions, [-1, num_classes])
+    #predictions = tf.to_float(predictions)
 
     one_hot_target = tf.contrib.slim.one_hot_encoding(
-                            tf.cast(flattened_labels, tf.int32),
+                            tf.cast(labels, tf.int32),
                             num_classes, on_value=1.0, off_value=0.0)
+    one_hot_target = tf.squeeze(one_hot_target, -2)
     # not_ignore_mask = tf.reduce_sum(one_hot_target, -1)
-    ne = [tf.not_equal(flattened_labels, il) for il in ignore_label]
+    ne = [tf.not_equal(labels, il) for il in ignore_label]
     ne = [tf.to_float(v) for v in ne]
     # ne_sums = [tf.reduce_sum(v) for v in ne]
     not_ignore_mask = ne.pop(0)
     for v in ne:
         not_ignore_mask = tf.multiply(not_ignore_mask, v)
+    not_ignore_mask = tf.squeeze(not_ignore_mask, -1)
     #tf.summary.image("not_ignore_mask", tf.reshape(not_ignore_mask, tf.shape(labels)))
 
     #uncomment the follwoing to debug if one_hot contains invalid values
@@ -41,10 +46,41 @@ def _softmax_classification_loss(predictions, labels, ignore_label):
     #          "ig_max", tf.reduce_max(ignore_mask),
     #          "nig_max", tf.reduce_max(not_ignore_mask)])
 
-    return tf.losses.softmax_cross_entropy(
+    # c_ent = tf.nn.softmax_cross_entropy_with_logits_v2(
+    #     labels=one_hot_target,
+    #     logits=predictions)*not_ignore_mask
+    c_ent = tf.losses.softmax_cross_entropy(
                     one_hot_target,
-                    logits=tf.to_float(predictions),
-                    weights=not_ignore_mask)
+                    logits=predictions,
+                    weights=not_ignore_mask,
+                    loss_collection=None,
+                    reduction="none")
+
+    # p = tf.print([tf.reduce_max(predictions), tf.reduce_min(predictions)])
+    # with tf.control_dependencies([p]):
+    predictions = tf.debugging.assert_all_finite(predictions,"predictions nan")
+    smax = tf.nn.softmax(predictions)
+    smax = tf.debugging.assert_all_finite(smax,"smax nan")
+    max_pred = tf.reduce_max(predictions, -1, keepdims=True)
+    max_sub = predictions - max_pred
+    log_pred = (max_sub - tf.log(tf.reduce_sum(tf.exp(max_sub), -1, keepdims=True)+epsilon))
+    log_pred = tf.debugging.assert_all_finite(log_pred,"log_pred nan")
+
+
+    lam =  0.0001
+    ent_loss = -tf.reduce_mean(smax*log_pred, -1)*lam
+    #ent_loss = -tf.reduce_mean(tf.log(smax + epsilon)*smax, -1)*lam
+
+    ent_loss = tf.debugging.assert_all_finite(ent_loss,"ent_loss nan")
+    
+    #if any equal 254 the whole image uses ent_loss
+    weights = tf.to_float(tf.reduce_sum(tf.to_float(tf.squeeze(tf.equal(labels, 254),-1)),[1,2],keepdims=True) > 0)
+
+    # p = tf.print([tf.squeeze(weights)])
+    # with tf.control_dependencies([p]):
+    # import pdb; pdb.set_trace()
+    return tf.reduce_mean(tf.div_no_nan(tf.reduce_sum(ent_loss*weights + (1 - weights)*c_ent,[1,2]),tf.reduce_sum(not_ignore_mask,[1,2])))
+    #return tf.reduce_mean(tf.div_no_nan(tf.reduce_sum(c_ent,[1,2]),tf.reduce_sum(not_ignore_mask,[1,2])))
 
 def _focal_loss(logits, labels, ignore_label, gamma=2.0, alpha=0.25):
     """
@@ -62,7 +98,6 @@ def _focal_loss(logits, labels, ignore_label, gamma=2.0, alpha=0.25):
     :param alpha:
     :return: shape of [batch_size]
     """
-    epsilon = 1.e-9
     # labels = tf.to_int64(labels)
     # labels = tf.convert_to_tensor(labels, tf.int64)
     # logits = tf.convert_to_tensor(logits, tf.float32)

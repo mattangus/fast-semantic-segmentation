@@ -2,6 +2,8 @@ r"""Preprocessing step for inptut images"""
 import functools
 import tensorflow as tf
 import random
+import numpy as np
+import scipy.stats as st
 
 from protos import preprocessor_pb2
 from builders import dataset_builder
@@ -18,6 +20,7 @@ _RANDOM_SCALE_STEP_KEY = 'RANDOM_SCALE_STEP'
 _IMAGE_CROP_KEY = 'IMAGE_CROP_STEP'
 
 _IMAGE_SCALE_KEY = 'IMAGE_SCALE_KEY'
+_DIF_SCALE_KEY = 'DIF_SCALE_KEY'
 
 _IMAGE_HORIZONTAL_FLIP_KEY = 'IMAGE_HORIZONTAL_FLIP_STEP'
 
@@ -135,6 +138,52 @@ def resize_to_range(image,
                                 new_size[:-1], align_corners=True)
     return (new_image, new_label)
 
+def random_hue(images, labels, max_delta,
+                preprocess_vars_cache=None):
+    return tf.image.random_hue(images,max_delta), labels
+
+def random_sat(images, labels, min_scale, max_scale,
+                preprocess_vars_cache=None):
+    return tf.image.random_saturation(images,min_scale,max_scale), labels
+
+def gkern(kernlen, nsig=3):
+    n = kernlen
+    x = np.arange(0,n)
+    y = np.arange(0,n)
+    xs, ys, _ = np.meshgrid(x,y, "ij")
+    xs = xs[...,0]
+    ys = ys[...,0]
+
+    p = 2
+    pred = np.power(np.power(np.abs((xs-n/2)),p) + np.power(np.abs((ys-n/2)),p),1/p)
+    pred = pred.max() - pred
+    pred /= pred.max()
+    return (pred)/5
+
+def salt_and_pepper(images, labels, corrupt_ratio, kern_size,
+                preprocess_vars_cache=None):
+    with tf.variable_scope("SaltAndPapper"):
+        b = tf.distributions.Bernoulli(probs=corrupt_ratio/2)
+        shape = [images.shape[0], images.shape[1], 1]
+        _salt = tf.to_float(b.sample(shape))
+        _pepper = tf.to_float(b.sample(shape))
+
+        # Make Gaussian Kernel with desired specs.
+        gauss_kernel = gkern(kern_size)
+
+        # Expand dimensions of `gauss_kernel` for `tf.nn.conv2d` signature.
+        gauss_kernel = gauss_kernel[:, :, np.newaxis, np.newaxis]
+
+        # Convolve.
+        salt = tf.nn.conv2d(tf.expand_dims(_salt,0), gauss_kernel, strides=[1, 1, 1, 1], padding="SAME")[0]
+        pepper = 1 - tf.nn.conv2d(tf.expand_dims(_pepper,0), gauss_kernel, strides=[1, 1, 1, 1], padding="SAME")[0]
+
+        # salt = salt / tf.reduce_max(salt)
+        # pepper = pepper / tf.reduce_max(pepper)
+
+        new_imgs = tf.clip_by_value((images*pepper + images*salt), 0., 255.)
+
+        return new_imgs, labels
 
 def random_scale(images,
                  labels,
@@ -150,14 +199,21 @@ def random_scale(images,
             tf.random_uniform, [],
             minval=min_scale_ratio, maxval=max_scale_ratio,
             dtype=tf.float32, seed=seed)
+        generator_func_dif = functools.partial(
+            tf.random_uniform, [],
+            minval=-0.1, maxval=0.1,
+            dtype=tf.float32, seed=seed)
         size_coef = _get_or_create_preprocess_rand_vars(
             generator_func, _IMAGE_SCALE_KEY,
             preprocess_vars_cache)
+        dif_coef = _get_or_create_preprocess_rand_vars(
+            generator_func_dif, _DIF_SCALE_KEY,
+            preprocess_vars_cache)
 
         image_newysize = tf.to_int32(
-                    tf.multiply(tf.to_float(image_height), size_coef))
+                    tf.multiply(tf.to_float(image_height), size_coef + dif_coef))
         image_newxsize = tf.to_int32(
-                    tf.multiply(tf.to_float(image_width), size_coef))
+                    tf.multiply(tf.to_float(image_width), size_coef - dif_coef))
         new_shape = (image_newysize, image_newxsize)
 
         # Must be 4D tensor for resize ops
@@ -188,11 +244,15 @@ def random_crop(images, labels,
                 images_channel_dim=3,
                 labels_channel_dim=1,
                 preprocess_vars_cache=None):
-
+    # crop_seed = random.randint(-(2**32-1),2**32-1)
+    # crop_img = tf.image.random_crop(images,[crop_height, crop_width, 3], seed=crop_seed)
+    # crop_label = tf.image.random_crop(labels,[crop_height, crop_width, 1], seed=crop_seed)
+    # return crop_img, crop_label
     def _apply_random_crop(inputs, offsets, crop_shape):
-        sliced_inputs = tf.slice(inputs, offsets, crop_shape)
-        out_inputs = tf.reshape(sliced_inputs, crop_shape)
-        return out_inputs
+        # sliced_inputs = tf.slice(inputs, offsets, crop_shape)
+        sliced_inputs = inputs[offsets[0]:offsets[0]+crop_shape[0], offsets[1]:offsets[1]+crop_shape[1]]
+        #out_inputs = tf.reshape(sliced_inputs, crop_shape)
+        return sliced_inputs
 
     with tf.name_scope('RandomCropImage', values=[images, labels]):
         images_shape = tf.shape(images)
@@ -218,11 +278,14 @@ def random_crop(images, labels,
             _IMAGE_CROP_KEY+'_1',
             preprocess_vars_cache)
 
-        offsets = tf.to_int32(tf.stack([offset_height, offset_width, 0]))
-        crop_shape_images = tf.stack(
-            [crop_height, crop_width, images_channel_dim])
-        crop_shape_labels = tf.stack(
-            [crop_height, crop_width, labels_channel_dim])
+        offsets = [offset_height, offset_width]#tf.to_int32(tf.stack([offset_height, offset_width, 0]))
+        # crop_shape_images = tf.stack(
+        #     [crop_height, crop_width, images_channel_dim])
+        # crop_shape_labels = tf.stack(
+        #     [crop_height, crop_width, labels_channel_dim])
+
+        crop_shape_images = [crop_height, crop_width]
+        crop_shape_labels = [crop_height, crop_width]
 
         cropped_images = _apply_random_crop(images, offsets, crop_shape_images)
         cropped_labels = _apply_random_crop(labels, offsets, crop_shape_labels)
@@ -372,9 +435,31 @@ def build(preprocessor_config_list):
                 random_horizontal_flip)
             proprocessor_func_list.append(image_horizontal_flip_fn)
 
+        if step_type == "salt_and_pepper":
+            config = preprocessor_step_config.salt_and_pepper
+            salt_pepper_fn = functools.partial(salt_and_pepper,
+                corrupt_ratio=config.corrupt_ratio,
+                kern_size=config.kern_size)
+            proprocessor_func_list.append(salt_pepper_fn)
+        
+        if step_type == "random_hue":
+            config = preprocessor_step_config.random_hue
+            random_hue_fn = functools.partial(random_hue,
+                max_delta=config.max_delta)
+            proprocessor_func_list.append(random_hue_fn)
+
+        if step_type == "random_sat":
+            config = preprocessor_step_config.random_sat
+            random_sat_fn = functools.partial(random_sat,
+                min_scale=config.min_scale,
+                max_scale=config.max_scale)
+            proprocessor_func_list.append(random_sat_fn)
+
         if len(proprocessor_func_list) <= 0 and \
             len(preprocessor_config_list) > 0:
             raise ValueError('Unknown preprocessing step.')
+
+
 
     preprocessor = functools.partial(
         preprocess_runner,

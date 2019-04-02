@@ -63,9 +63,10 @@ class DropoutProcessor(pp.PostProcessor):
         #Popoviciu's inequality: var[X] <= (max - min)^2/4
         #https://stats.stackexchange.com/questions/45588/variance-of-a-bounded-random-variable
         max_var = 1./4.
-        scale = 10
+        scale = 100
         max_var /= scale
-        self.norm_variance = tf.nn.sigmoid((self.interp_variance - max_var) / max_var)
+        #self.norm_variance = tf.nn.sigmoid((self.interp_variance - max_var) / max_var)
+        self.norm_variance = (self.interp_variance) / max_var
 
         with tf.device(self.pre_process_gpu):
             self.metrics, self.update = metrics.get_metric_ops(self.annot, self.norm_variance, self.weights)
