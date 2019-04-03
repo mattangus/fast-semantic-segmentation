@@ -189,7 +189,7 @@ def main():
                     "lostfound_eval": 1, "lostfound_train": 1,
                     "uniform_eval": 2, "uniform_train": 2,
                     "normal_eval": 3, "normal_train": 3}
-    second_sort = {"MaxSoftmax": 0, "ODIN": 1, "Mahal": 2, "Confidence": 3, "Dropout": 4}
+    second_sort = {"MaxSoftmax": 0, "ODIN": 1, "Mahal": 2, "Confidence": 3, "Dropout": 4, "Entropy": 5}
     all_results = sorted(all_results, key= lambda x: (first_sort[x[0]], second_sort[x[1]]))
 
     format_results = list(map(lambda x: format_row(*x), all_results))

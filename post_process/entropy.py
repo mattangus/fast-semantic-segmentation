@@ -7,14 +7,14 @@ from third_party.doc_inherit import doc_inherit
 from helpers import get_valid
 from . import validation_metrics as metrics
 
-class MaxSoftmaxProcessor(pp.PostProcessor):
+class EntropyProcessor(pp.PostProcessor):
     
     def __init__(self, model, outputs_dict, num_classes,
                     annot, image, path, ignore_label, process_annot,
                     num_gpus, batch_size,
                     #class specific
                     ):
-        super().__init__("MaxSoftmax", model, outputs_dict, num_gpus)
+        super().__init__("Entropy", model, outputs_dict, num_gpus)
         self.num_classes = num_classes
         self.annot = annot
         self.image = image
@@ -40,10 +40,10 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
         self.interp_logits = tf.image.resize_bilinear(unscaled_logits, pred_shape[1:3])
         
         smax = tf.nn.softmax(self.interp_logits)
-        max_pred = tf.reduce_max(predictions, -1, keepdims=True)
-        max_sub = predictions - max_pred
+        max_pred = tf.reduce_max(self.interp_logits, -1, keepdims=True)
+        max_sub = self.interp_logits - max_pred
         log_pred = (max_sub - tf.log(tf.reduce_sum(tf.exp(max_sub), -1, keepdims=True)+1.e-5))
-        self.prediction = -tf.reduce_mean(smax*log_pred, -1)*lam
+        self.prediction = -tf.reduce_mean(smax*log_pred, -1)
 
         self.metrics, self.update = metrics.get_metric_ops(self.annot, self.prediction, self.weights)
 
@@ -53,11 +53,7 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
         
     @doc_inherit
     def get_preprocessed(self):
-        with tf.device(self.pre_process_gpu):
-            if self.epsilon > 0.0:
-                self.grads = tf.gradients(self.prediction, self.image)
-                return self.image - tf.squeeze(self.epsilon*tf.sign(self.grads), 1)
-            return None
+        return None
 
     @doc_inherit
     def get_vars_noload(self):

@@ -20,6 +20,7 @@ from post_process.mahalanobis import MahalProcessor
 from post_process.max_softmax import MaxSoftmaxProcessor
 from post_process.droput import DropoutProcessor
 from post_process.confidence import ConfidenceProcessor
+from post_process.entropy import EntropyProcessor
 from protos.config_reader import read_config
 from libs.exporter import deploy_segmentation_inference_graph
 
@@ -42,6 +43,7 @@ processor_dict = {
     "ODIN": MaxSoftmaxProcessor,
     "Dropout": DropoutProcessor,
     "Confidence": ConfidenceProcessor,
+    "Entropy": EntropyProcessor
 }
 
 def get_median(v):

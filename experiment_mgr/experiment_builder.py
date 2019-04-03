@@ -262,3 +262,36 @@ class ConfidenceRunBuilder(RunnerBuilder):
     @doc_inherit
     def top_exclude_fn(self, result):
         return False
+
+class EntropyRunBuilder(RunnerBuilder):
+
+    def __init__(self, annot_type, experiment_set):
+        assert annot_type in ["ood", "error"]
+        self.annot_type = annot_type
+        self.experiment_set = experiment_set
+
+    @doc_inherit
+    def make_args(self, train=True):
+        model_config = "configs/model/pspnet_full_dim.config"
+        data_config = self.experiment_set.eval_set
+        trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
+        pad_to_shape = "1025,2049"
+        processor_type = "Entropy"
+        annot_type = self.annot_type
+        kwargs = {
+        }
+        run_args = Experiment(model_config, data_config,
+                trained_checkpoint, pad_to_shape,
+                processor_type, annot_type, kwargs)
+        return run_args
+
+    @doc_inherit
+    def get_train(self):
+        arg_list = []
+        run_args = self.make_args()
+        arg_list.append(run_args)
+        return arg_list
+    
+    @doc_inherit
+    def top_exclude_fn(self, result):
+        return False
