@@ -152,6 +152,9 @@ def _make_dataset(reader_config, num_readers):
     else:
         dataset = _build_random(reader_config)
     
+    if reader_config.repetitions > 1:
+        dataset = dataset.repeat(reader_config.repetitions)
+
     return dataset
 
 def build(input_reader_config, num_epoch):
@@ -169,8 +172,9 @@ def build(input_reader_config, num_epoch):
         dataset = _make_dataset(reader_config[0], input_reader_config.num_readers)
     else:
         datasets = list(map(lambda x: _make_dataset(x, input_reader_config.num_readers), reader_config))
-        num_examples = [r.num_examples for r in reader_config]
+        num_examples = [r.num_examples*r.repetitions for r in reader_config]
         dataset_choices = []
+
         for i, n in enumerate(num_examples):
             dataset_choices.extend([i] * n)
 

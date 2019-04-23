@@ -186,6 +186,7 @@ def train_segmentation_model(create_model_fn,
                 preprocess_fn,
                 per_clone_batch_size,
                 num_clones)
+            dataset = dataset.apply(tf.data.experimental.ignore_errors())
             data_iterator = dataset.make_one_shot_iterator()
         # Create the global step on the device storing the variables.
         with tf.device(deploy_config.variables_device()):
