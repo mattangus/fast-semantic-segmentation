@@ -215,9 +215,10 @@ def eval_segmentation_model(create_model_fn,
     metric_map = {}
     predictions_tag='EvalMetrics/mIoU'
     conf_tag='EvalMetrics/confusionMatrix'
-    value_op, conf_value, update_op = metrics.mean_iou(
-                        flattened_predictions, eval_labels, num_classes,
-                        weights=tf.to_float(neg_validity_mask))
+    value_op, conf_op, update_op = metrics.mean_iou(labels=eval_labels,
+                                                predictions=flattened_predictions,
+                                                num_classes=num_classes,
+                                                weights=tf.to_float(neg_validity_mask))
     # conf_value, conf_update =  metrics._streaming_confusion_matrix(eval_labels,
     #                     flattened_predictions, num_classes,
     #                     weights=tf.to_float(neg_validity_mask))
@@ -226,12 +227,12 @@ def eval_segmentation_model(create_model_fn,
     #                                             weights=tf.to_float(neg_validity_mask))
     # TODO: Extend the metrics tuple if needed in the future
     metric_map[predictions_tag] = (value_op, update_op)
-    metric_map[conf_tag] = (conf_value, update_op)
+    #metric_map[conf_tag] = (conf_value, update_op)
     # Print updates if verbosity is requested
     if verbose:
         update_op = tf.Print(update_op, [value_op], predictions_tag)
         #conf_update = tf.Print(conf_update, [conf_value], conf_tag)
-    value_op = [value_op, conf_value]
+    #value_op = [value_op, conf_value]
     # update_op = [update_op, conf_update]
     metrics_to_values, metrics_to_updates = (
         tf.contrib.metrics.aggregate_metric_map(metric_map))
@@ -257,10 +258,15 @@ def eval_segmentation_model(create_model_fn,
             'PredictionImage', predictions_viz, family='EvalImages')
     summary_op = tf.summary.merge_all()
 
-    tf.logging.info('Evaluating over %d samples...',
-                    input_reader.num_examples)
+    reader_config = input_reader.tf_record_input_reader
+    num_examples = np.prod([r.num_examples for r in reader_config])
 
-    total_eval_examples = input_reader.num_examples
+
+    tf.logging.info('Evaluating over %d samples...',
+                    num_examples)
+
+    hooks = []#[tf.train.LoggingTensorHook({"miou": value_op}, every_n_iter=5)]
+    total_eval_examples = num_examples
     if evaluate_single_checkpoint:
         curr_checkpoint = evaluate_single_checkpoint 
         metric_results = slim.evaluation.evaluate_once(
@@ -271,6 +277,7 @@ def eval_segmentation_model(create_model_fn,
                             eval_op=eval_op,
                             final_op=value_op,
                             summary_op=summary_op,
+                            hooks=hooks,
                             variables_to_restore=variables_to_restore)
         tf.logging.info('Evaluation of `{}` over. Eval values: {}'.format(
                     curr_checkpoint, metric_results))
@@ -284,16 +291,17 @@ def eval_segmentation_model(create_model_fn,
                             final_op=value_op,
                             summary_op=summary_op,
                             #timeout=0,
+                            hooks=hooks,
                             variables_to_restore=variables_to_restore)
         
         tf.logging.info('Evaluation over. Eval values: {}'.format(
                         metric_results))
-    cm = metric_results[1]
-    cm = 100 * (cm / np.sum(cm, axis=0))
-    plt.figure(figsize=[20.48,10.24])
-    sb.heatmap(cm, annot=True)
-    plt.savefig(eval_dir + "/confusion_matrix.png")
-    plt.cla() #clear memory since no display happens
-    plt.clf()
+    # cm = metric_results[1]
+    # cm = 100 * (cm / np.sum(cm, axis=0))
+    # plt.figure(figsize=[20.48,10.24])
+    # sb.heatmap(cm, annot=True)
+    # plt.savefig(eval_dir + "/confusion_matrix.png")
+    # plt.cla() #clear memory since no display happens
+    # plt.clf()
 
     return metric_results

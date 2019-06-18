@@ -2,6 +2,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from tensorflow.python.distribute import distribution_strategy_context
 from tensorflow.python.eager import context
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
@@ -78,6 +79,39 @@ def metric_variable(shape, dtype, validate_shape=True, name=None):
       #aggregation=1, #sum
       name=name)
 
+def _aggregate_across_replicas(metrics_collections, metric_value_fn, *args):
+  """Aggregate metric value across replicas."""
+  def fn(distribution, *a):
+    """Call `metric_value_fn` in the correct control flow context."""
+    if hasattr(distribution.extended, '_outer_control_flow_context'):
+      # If there was an outer context captured before this method was called,
+      # then we enter that context to create the metric value op. If the
+      # caputred context is `None`, ops.control_dependencies(None) gives the
+      # desired behavior. Else we use `Enter` and `Exit` to enter and exit the
+      # captured context.
+      # This special handling is needed because sometimes the metric is created
+      # inside a while_loop (and perhaps a TPU rewrite context). But we don't
+      # want the value op to be evaluated every step or on the TPU. So we
+      # create it outside so that it can be evaluated at the end on the host,
+      # once the update ops have been evaluted.
+
+      # pylint: disable=protected-access
+      if distribution.extended._outer_control_flow_context is None:
+        with ops.control_dependencies(None):
+          metric_value = metric_value_fn(distribution, *a)
+      else:
+        distribution.extended._outer_control_flow_context.Enter()
+        metric_value = metric_value_fn(distribution, *a)
+        distribution.extended._outer_control_flow_context.Exit()
+        # pylint: enable=protected-access
+    else:
+      metric_value = metric_value_fn(distribution, *a)
+    if metrics_collections:
+      ops.add_to_collections(metrics_collections, metric_value)
+    return metric_value
+
+  return distribution_strategy_context.get_replica_context().merge_call(
+      fn, args=args)
 
 def _streaming_confusion_matrix(labels, predictions, num_classes, weights=None):
   """Calculate a streaming confusion matrix.
@@ -123,6 +157,104 @@ def _streaming_confusion_matrix(labels, predictions, num_classes, weights=None):
       labels, predictions, num_classes, weights=weights, dtype=dtypes.float64)
   update_op = state_ops.assign_add(total_cm, current_cm)
   return total_cm, update_op
+
+# def mean_iou(labels,
+#              predictions,
+#              num_classes,
+#              weights=None,
+#              metrics_collections=None,
+#              updates_collections=None,
+#              name=None):
+#   """Calculate per-step mean Intersection-Over-Union (mIOU).
+#   Mean Intersection-Over-Union is a common evaluation metric for
+#   semantic image segmentation, which first computes the IOU for each
+#   semantic class and then computes the average over classes.
+#   IOU is defined as follows:
+#     IOU = true_positive / (true_positive + false_positive + false_negative).
+#   The predictions are accumulated in a confusion matrix, weighted by `weights`,
+#   and mIOU is then calculated from it.
+#   For estimation of the metric over a stream of data, the function creates an
+#   `update_op` operation that updates these variables and returns the `mean_iou`.
+#   If `weights` is `None`, weights default to 1. Use weights of 0 to mask values.
+#   Args:
+#     labels: A `Tensor` of ground truth labels with shape [batch size] and of
+#       type `int32` or `int64`. The tensor will be flattened if its rank > 1.
+#     predictions: A `Tensor` of prediction results for semantic labels, whose
+#       shape is [batch size] and type `int32` or `int64`. The tensor will be
+#       flattened if its rank > 1.
+#     num_classes: The possible number of labels the prediction task can
+#       have. This value must be provided, since a confusion matrix of
+#       dimension = [num_classes, num_classes] will be allocated.
+#     weights: Optional `Tensor` whose rank is either 0, or the same rank as
+#       `labels`, and must be broadcastable to `labels` (i.e., all dimensions must
+#       be either `1`, or the same as the corresponding `labels` dimension).
+#     metrics_collections: An optional list of collections that `mean_iou`
+#       should be added to.
+#     updates_collections: An optional list of collections `update_op` should be
+#       added to.
+#     name: An optional variable_scope name.
+#   Returns:
+#     mean_iou: A `Tensor` representing the mean intersection-over-union.
+#     update_op: An operation that increments the confusion matrix.
+#   Raises:
+#     ValueError: If `predictions` and `labels` have mismatched shapes, or if
+#       `weights` is not `None` and its shape doesn't match `predictions`, or if
+#       either `metrics_collections` or `updates_collections` are not a list or
+#       tuple.
+#     RuntimeError: If eager execution is enabled.
+#   """
+#   if context.executing_eagerly():
+#     raise RuntimeError('tf.metrics.mean_iou is not supported when '
+#                        'eager execution is enabled.')
+
+#   with variable_scope.variable_scope(name, 'mean_iou',
+#                                      (predictions, labels, weights)):
+#     # Check if shape is compatible.
+#     predictions.get_shape().assert_is_compatible_with(labels.get_shape())
+
+#     total_cm, update_op = _streaming_confusion_matrix(labels, predictions,
+#                                                       num_classes, weights)
+
+#     def compute_mean_iou(total_cm, name):
+#       """Compute the mean intersection-over-union via the confusion matrix."""
+#       sum_over_row = math_ops.to_float(math_ops.reduce_sum(total_cm, 0))
+#       sum_over_col = math_ops.to_float(math_ops.reduce_sum(total_cm, 1))
+#       cm_diag = math_ops.to_float(array_ops.diag_part(total_cm))
+#       denominator = sum_over_row + sum_over_col - cm_diag
+
+#       # The mean is only computed over classes that appear in the
+#       # label or prediction tensor. If the denominator is 0, we need to
+#       # ignore the class.
+#       num_valid_entries = math_ops.reduce_sum(
+#           math_ops.cast(
+#               math_ops.not_equal(denominator, 0), dtype=dtypes.float32))
+
+#       # If the value of the denominator is 0, set it to 1 to avoid
+#       # zero division.
+#       denominator = array_ops.where(
+#           math_ops.greater(denominator, 0), denominator,
+#           array_ops.ones_like(denominator))
+#       iou = math_ops.div(cm_diag, denominator)
+
+#       # If the number of valid entries is 0 (no classes) we return 0.
+#       result = array_ops.where(
+#           math_ops.greater(num_valid_entries, 0),
+#           math_ops.reduce_sum(iou, name=name) / num_valid_entries, 0)
+#       return result
+
+#     def mean_iou_across_towers(_, v):
+#       mean_iou_v = compute_mean_iou(v, 'mean_iou')
+#       if metrics_collections:
+#         ops.add_to_collections(metrics_collections, mean_iou_v)
+#       return mean_iou_v
+
+#     mean_iou_v = tf.contrib.distribute.get_tower_context().merge_call(
+#         mean_iou_across_towers, total_cm)
+
+#     if updates_collections:
+#       ops.add_to_collections(updates_collections, update_op)
+
+#     return mean_iou_v, total_cm, update_op
 
 def mean_iou(labels,
              predictions,
@@ -181,7 +313,7 @@ def mean_iou(labels,
     total_cm, update_op = _streaming_confusion_matrix(labels, predictions,
                                                       num_classes, weights)
 
-    def compute_mean_iou(total_cm, name):
+    def compute_mean_iou(_, total_cm):
       """Compute the mean intersection-over-union via the confusion matrix."""
       sum_over_row = math_ops.to_float(math_ops.reduce_sum(total_cm, 0))
       sum_over_col = math_ops.to_float(math_ops.reduce_sum(total_cm, 1))
@@ -205,17 +337,12 @@ def mean_iou(labels,
       # If the number of valid entries is 0 (no classes) we return 0.
       result = array_ops.where(
           math_ops.greater(num_valid_entries, 0),
-          math_ops.reduce_sum(iou, name=name) / num_valid_entries, 0)
+          math_ops.reduce_sum(iou, name='mean_iou') / num_valid_entries, 0)
       return result
 
-    def mean_iou_across_towers(_, v):
-      mean_iou_v = compute_mean_iou(v, 'mean_iou')
-      if metrics_collections:
-        ops.add_to_collections(metrics_collections, mean_iou_v)
-      return mean_iou_v
-
-    mean_iou_v = tf.contrib.distribute.get_tower_context().merge_call(
-        mean_iou_across_towers, total_cm)
+    # TODO(priyag): Use outside_compilation if in TPU context.
+    mean_iou_v = _aggregate_across_replicas(
+        metrics_collections, compute_mean_iou, total_cm)
 
     if updates_collections:
       ops.add_to_collections(updates_collections, update_op)

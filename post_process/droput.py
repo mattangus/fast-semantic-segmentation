@@ -50,9 +50,9 @@ class DropoutProcessor(pp.PostProcessor):
         #make predition
         logits = tf.image.resize_bilinear(unscaled_logits, pred_shape[1:3])
         pred = tf.nn.softmax(logits)
-        stacked_pred = tf.stack(tf.split(pred, self._num_runs))
+        self.stacked_pred = tf.stack(tf.split(pred, self._num_runs))
 
-        self.mean_logits, self.all_variance = tf.nn.moments(stacked_pred, [0])
+        self.mean_logits, self.all_variance = tf.nn.moments(self.stacked_pred, [0])
         self.prediction = tf.cast(tf.expand_dims(tf.argmax(self.mean_logits, -1),-1), tf.int32)
         self.interp_variance = tf.reduce_mean(self.all_variance, -1, keepdims=True)
 

@@ -1,13 +1,57 @@
 import tensorflow as tf
 import numpy as np
 import sklearn as sk
+import cv2
 
 num_thresholds = 400
 eps = 1e-7
 
+apply_filter = False
+
+def filter_ood(imgs, thresh=180, dilate=5, erode=5):
+    if dilate % 2 == 0:
+        dilate -= 1
+    if erode % 2 == 0:
+        erode -= 1
+    if dilate < 1:
+        dilate = 1
+    if erode < 1:
+        erode = 1
+    # import pdb; pdb.set_trace()
+    all_probs = []
+    for img in imgs:
+        img -= img.min()
+        img /= img.max()
+        edges = cv2.Canny((img*255).astype(np.uint8), thresh, thresh)
+        di = cv2.dilate(edges, np.ones((dilate, dilate)))
+        er = cv2.erode(di, np.ones((erode, erode)))
+
+        dtform = cv2.distanceTransform(255 - er,
+                        distanceType=cv2.DIST_L2,
+                        maskSize=cv2.DIST_MASK_PRECISE)
+
+        dtform[dtform > 10] = 10
+        dtform /= 10
+
+        border_probs = dtform
+        probs = cv2.dilate(border_probs*img, np.ones((3,3)))
+        # import matplotlib.pyplot as plt
+        # plt.subplot(2,1,1)
+        # plt.imshow(img)
+        # plt.subplot(2,1,2)
+        # plt.imshow(probs)
+        # plt.show()
+        all_probs.append(probs)
+    return np.array(all_probs)
+
 def get_metric_ops(annot, prediction, weights):
 
-    res, update = tf.contrib.metrics.precision_recall_at_equal_thresholds(tf.cast(annot, tf.bool),prediction,weights,num_thresholds, name="ConfMat")
+    new_pred = prediction
+    if apply_filter:
+        new_pred = tf.py_func(filter_ood, [prediction], tf.float32, stateful=False)
+        new_pred.set_shape(prediction.shape)
+
+    res, update = tf.contrib.metrics.precision_recall_at_equal_thresholds(tf.cast(annot, tf.bool),new_pred,weights,num_thresholds, name="ConfMat")
 
     tp = res.tp
     fp = res.fp

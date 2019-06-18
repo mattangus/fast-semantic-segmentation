@@ -20,9 +20,11 @@ def _filter_already_run(arg_list):
 
 #ood
 sun_experiment_set = ExperimentDataset("configs/data/sun_train.config", "configs/data/sun_eval.config")
+coco_experiment_set = ExperimentDataset("configs/data/coco_train.config", "configs/data/coco_eval.config")
 lost_experiment_set = ExperimentDataset("configs/data/lostfound_train.config", "configs/data/lostfound_eval.config")
 normal_experiment_set = ExperimentDataset("configs/data/normal_train.config", "configs/data/normal_eval.config")
 uniform_experiment_set = ExperimentDataset("configs/data/uniform_train.config", "configs/data/uniform_eval.config")
+perlin_experiment_set = ExperimentDataset("configs/data/perlin_train.config", "configs/data/perlin_eval.config")
 #error
 city_experiment_set = ExperimentDataset("configs/data/cityscapes_train.config", "configs/data/cityscapes_eval.config")
 
@@ -160,10 +162,10 @@ class MahalRunBuilder(RunnerBuilder):
             eval_dir="remote/eval_logs/resnet_dim/",
             global_cov=True, global_mean=False, train=True):
         model_config = "configs/model/pspnet_full_dim.config"
-        # if train:
-        #     data_config = self.experiment_set.train_set
-        # else:
-        data_config = self.experiment_set.eval_set
+        if train:
+            data_config = self.experiment_set.train_set
+        else:
+            data_config = self.experiment_set.eval_set
         trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
         pad_to_shape = "1025,2049"
         processor_type = "Mahal"
@@ -219,7 +221,7 @@ class DropoutRunBuilder(RunnerBuilder):
 
     @doc_inherit
     def get_train(self):
-        return [self.make_args(n) for n in [4, 6]]
+        return [self.make_args(n) for n in [4, 6, 8, 10]]
     
     @doc_inherit
     def top_exclude_fn(self, result):

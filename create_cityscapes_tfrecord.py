@@ -12,8 +12,8 @@ import numpy as np
 import PIL.Image
 import cv2
 import random
-
 import tensorflow as tf
+from PIL import Image
 
 flags = tf.app.flags
 tf.flags.DEFINE_string('input_pattern', '',
@@ -28,6 +28,7 @@ tf.flags.DEFINE_string('split_type', '',
                        'Type of split: `train`, `test` or `val`.')
 tf.flags.DEFINE_string('output_dir', '', 'Output data directory.')
 tf.flags.DEFINE_string('name', '', 'output name.')
+tf.flags.DEFINE_string('aspect', None, 'Aspect ratio to filter by.')
 
 tf.flags.DEFINE_integer("label_value", None, "value to pass as label")
 
@@ -37,9 +38,7 @@ tf.flags.DEFINE_bool("shuffle", True, "shuffle list")
 
 FLAGS = flags.FLAGS
 
-
 tf.logging.set_verbosity(tf.logging.INFO)
-
 
 _DEFAULT_PATTEN = {
     'input': '*_leftImg8bit.png',
@@ -71,12 +70,21 @@ def _open_file(full_path):
     # return image, encoded_file
     return cv2.imread(full_path)
 
-def create_tf_example(image_path, label_path, image_dir='', is_jpeg=False):
+def create_tf_example(image_path, label_path, image_dir='', is_jpeg=False, target_aspect=None):
     file_format = 'jpeg' if is_jpeg else 'png'
     full_image_path = os.path.join(image_dir, image_path)
     full_label_path = os.path.join(image_dir, label_path)
     if FLAGS.label_value is not None:
         full_label_path = str(FLAGS.label_value)
+
+    if target_aspect is not None:
+        im = Image.open(full_label_path)
+        w, h = im.size
+        aspect = w/h
+
+        if abs(aspect - target_aspect) > 0.5:
+            return None
+
     # image = cv2.imread(full_image_path)
     # label = cv2.imread(full_label_path)
 
@@ -116,20 +124,24 @@ def create_tf_example(image_path, label_path, image_dir='', is_jpeg=False):
     return example
 
 
-def _create_tf_record(images, labels, output_path):
+def _create_tf_record(images, labels, output_path, target_aspect=None):
     options = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.GZIP)
     writer = tf.python_io.TFRecordWriter(output_path, options=options)
     if FLAGS.shuffle:
         images, labels = zip(*random.sample(list(zip(images, labels)), len(images)))
+    
+    write_num = 0
     for idx, image in enumerate(images):
-        if idx % 100 == 0:
-            tf.logging.info('On image %d of %d', idx, len(images))
+        if write_num % 100 == 0 or idx == (len(images)):
+            tf.logging.info('On image %d of %d', write_num, len(images))
         tf_example = create_tf_example(
-            image, labels[idx], is_jpeg=False)
-        writer.write(tf_example.SerializeToString())
+            image, labels[idx], is_jpeg=False, target_aspect=target_aspect)
+        if tf_example is not None:
+            writer.write(tf_example.SerializeToString())
+            write_num += 1
     writer.close()
     tf.logging.info('Finished writing!')
-
+    tf.logging.info(write_num)
 
 def main(_):
     assert FLAGS.output_dir, '`output_dir` missing.'
@@ -140,6 +152,12 @@ def main(_):
            (FLAGS.list_file), \
            'Must specify either `cityscapes_dir` or ' \
            '(`input_pattern` and `annot_pattern`) or `list_file`.'
+
+    if FLAGS.aspect is not None:
+        ratio = list(map(int, FLAGS.aspect.split(":")))
+        target_aspect = ratio[0]/ratio[1]
+    else:
+        target_aspect = None
 
     if not tf.gfile.IsDirectory(FLAGS.output_dir):
         tf.gfile.MakeDirs(FLAGS.output_dir)
@@ -189,7 +207,8 @@ def main(_):
     _create_tf_record(
             sorted(image_filenames),
             sorted(annot_filenames),
-            output_path=train_output_path)
+            output_path=train_output_path,
+            target_aspect=target_aspect)
 
 
 if __name__ == '__main__':

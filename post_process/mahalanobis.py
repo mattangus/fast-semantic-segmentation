@@ -71,8 +71,9 @@ class MahalProcessor(pp.PostProcessor):
 
         tile_size = [in_shape[0]] + ([1] * (mean_sub._rank()-1))
         var_inv_tile = tf.tile(self.var_inv, tile_size)
-        left = tf.matmul(mean_sub, var_inv_tile)
-        mahal_dist = tf.squeeze(tf.sqrt(tf.matmul(left, mean_sub, transpose_b=True)))
+        with tf.device("cpu:0"):
+            left = tf.matmul(mean_sub, var_inv_tile)
+            mahal_dist = tf.squeeze(tf.sqrt(tf.matmul(left, mean_sub, transpose_b=True)))
 
         self.dist = mahal_dist
 
@@ -124,6 +125,7 @@ class MahalProcessor(pp.PostProcessor):
     @doc_inherit
     def post_process(self, numpy_dict):
         results = metrics.get_metric_values(numpy_dict["metrics"])
+
 
         return results
     

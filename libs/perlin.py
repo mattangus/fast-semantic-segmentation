@@ -2,9 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 #https://stackoverflow.com/questions/42147776/producing-2d-perlin-noise-with-numpy
 
-def perlin(x,y,seed=0):
+def perlin(x,y,seed=None):
     # permutation table
-    np.random.seed(seed)
+    if seed is not None:
+        np.random.seed(seed)
     p = np.arange(256,dtype=int)
     np.random.shuffle(p)
     p = np.stack([p,p]).flatten()
@@ -41,32 +42,39 @@ def gradient(h,x,y):
     g = vectors[h%4]
     return g[:,:,0] * x + g[:,:,1] * y
 
-def make_perlin(s,h, w):
-        
+def make_perlin(s,h,w):
     lin = np.linspace(0,s,max(h,w),endpoint=False)
-    x,y = np.meshgrid(lin,lin) # FIX3: I thought I had to invert x and y here but it was a mistake
+    x,y = np.meshgrid(lin,lin)
 
     def norm(v):
         v -= v.min()
         v /= v.max()
         return v
 
-    r = norm(perlin(x,y,seed=21234))
-    g = norm(perlin(x,y,seed=424))
-    b = norm(perlin(x,y,seed=234))
+    r = norm(perlin(x,y))
+    g = norm(perlin(x,y))
+    b = norm(perlin(x,y))
 
     img = np.stack([r, g, b], -1)
 
     return img[0:h,0:w]
 
 if __name__ == "__main__":
-    img_raw = (make_perlin(100, 1024, 2048) + make_perlin(10, 1024, 2048))/2
+    import cv2
+    img_raw = (make_perlin(100, 1024, 2048), make_perlin(10, 1024, 2048))
+    #img_raw = (make_perlin(10, 1024, 2048))
+    # img_raw = cv2.resize(img_raw, (2048, 1024))
 
     m = np.mean(img_raw,(0,1,2))
-    s = np.std(img_raw,(0,1,2))
     _channel_means = np.array([123.68, 116.779, 103.939])/255
     norm = np.clip(img_raw - m + _channel_means,0,1)
-    img_raw = norm
+    # img_raw = norm
 
-    plt.imshow(img_raw,origin='upper')
-    plt.show()
+    # plt.figure()
+    # plt.imshow(img_raw[0],origin='upper')
+    # plt.figure()
+    # plt.imshow(img_raw[1])
+    # plt.show()
+    cv2.imwrite("perlin_grey.png", (img_raw[1][...,0]*255).astype(np.uint8))
+    cv2.imwrite("perlin_100.png", (img_raw[0]*255).astype(np.uint8))
+    cv2.imwrite("perlin_10.png", (img_raw[1]*255).astype(np.uint8))

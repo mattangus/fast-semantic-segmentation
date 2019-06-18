@@ -151,10 +151,12 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     num_step = num_images // batch
 
     # previous_export_set = set([os.path.basename(f) for f in glob("exported/*/*/*.png")])
-    previous_export_set = {'sun_bccbrnzxuvtlnfte.png', 'sun_btotndklvjecpext.png', '05_Schafgasse_1_000015_000150_leftImg8bit.png', '07_Festplatz_Flugfeld_000000_000250_leftImg8bit.png', 'sun_bsxsdrjnkydomeni.png', 'frankfurt_000001_071288_leftImg8bit.png', '02_Hanns_Klemm_Str_44_000001_000200_leftImg8bit.png', '04_Maurener_Weg_8_000002_000140_leftImg8bit.png', 'rand.png', '05_Schafgasse_1_000004_000170_leftImg8bit.png', 'munster_000040_000019_leftImg8bit.png', 'sun_bbcoqwpogowtuyvw.png', '02_Hanns_Klemm_Str_44_000005_000190_leftImg8bit.png', '07_Festplatz_Flugfeld_000001_000230_leftImg8bit.png', '07_Festplatz_Flugfeld_000002_000440_leftImg8bit.png', '04_Maurener_Weg_8_000005_000200_leftImg8bit.png', 'munster_000074_000019_leftImg8bit.png', '04_Maurener_Weg_8_000008_000200_leftImg8bit.png', 'frankfurt_000001_049770_leftImg8bit.png', 'sun_aaalbzqrimafwbiv.png', '02_Hanns_Klemm_Str_44_000015_000210_leftImg8bit.png', 'sun_aevmsxcxjbsoluch.png', 'sun_bgboysxblgxwcinn.png', 'sun_bjvurbfklntazktu.png', '04_Maurener_Weg_8_000012_000190_leftImg8bit.png', '02_Hanns_Klemm_Str_44_000011_000240_leftImg8bit.png', '02_Hanns_Klemm_Str_44_000009_000220_leftImg8bit.png', '04_Maurener_Weg_8_000013_000230_leftImg8bit.png', 'sun_bcebhcwjetrpvgsz.png', 'sun_bgwmloggfpvwqzzr.png', '04_Maurener_Weg_8_000000_000200_leftImg8bit.png', 'sun_blpteetxpjmjcejm.png', '07_Festplatz_Flugfeld_000003_000340_leftImg8bit.png', '12_Umberto_Nobile_Str_000001_000280_leftImg8bit.png', '07_Festplatz_Flugfeld_000003_000320_leftImg8bit.png', '05_Schafgasse_1_000012_000220_leftImg8bit.png', 'sun_bcqjcrtydolfnxqd.png', 'sun_bvhyciwhwphjbpjz.png', '04_Maurener_Weg_8_000003_000130_leftImg8bit.png', '02_Hanns_Klemm_Str_44_000014_000200_leftImg8bit.png', '04_Maurener_Weg_8_000004_000210_leftImg8bit.png', '04_Maurener_Weg_8_000008_000180_leftImg8bit.png', 'sun_aaaenaoynzhoyheo.png', 'sun_aqvldktdprlskoki.png', 'sun_bjlpzthlefdpouad.png', 'lindau_000016_000019_leftImg8bit.png', 'frankfurt_000001_025921_leftImg8bit.png', '07_Festplatz_Flugfeld_000000_000260_leftImg8bit.png'}
+    #previous_export_set = {'sun_bccbrnzxuvtlnfte.png', 'sun_btotndklvjecpext.png', '05_Schafgasse_1_000015_000150_leftImg8bit.png', '07_Festplatz_Flugfeld_000000_000250_leftImg8bit.png', 'sun_bsxsdrjnkydomeni.png', 'frankfurt_000001_071288_leftImg8bit.png', '02_Hanns_Klemm_Str_44_000001_000200_leftImg8bit.png', '04_Maurener_Weg_8_000002_000140_leftImg8bit.png', 'rand.png', '05_Schafgasse_1_000004_000170_leftImg8bit.png', 'munster_000040_000019_leftImg8bit.png', 'sun_bbcoqwpogowtuyvw.png', '02_Hanns_Klemm_Str_44_000005_000190_leftImg8bit.png', '07_Festplatz_Flugfeld_000001_000230_leftImg8bit.png', '07_Festplatz_Flugfeld_000002_000440_leftImg8bit.png', '04_Maurener_Weg_8_000005_000200_leftImg8bit.png', 'munster_000074_000019_leftImg8bit.png', '04_Maurener_Weg_8_000008_000200_leftImg8bit.png', 'frankfurt_000001_049770_leftImg8bit.png', 'sun_aaalbzqrimafwbiv.png', '02_Hanns_Klemm_Str_44_000015_000210_leftImg8bit.png', 'sun_aevmsxcxjbsoluch.png', 'sun_bgboysxblgxwcinn.png', 'sun_bjvurbfklntazktu.png', '04_Maurener_Weg_8_000012_000190_leftImg8bit.png', '02_Hanns_Klemm_Str_44_000011_000240_leftImg8bit.png', '02_Hanns_Klemm_Str_44_000009_000220_leftImg8bit.png', '04_Maurener_Weg_8_000013_000230_leftImg8bit.png', 'sun_bcebhcwjetrpvgsz.png', 'sun_bgwmloggfpvwqzzr.png', '04_Maurener_Weg_8_000000_000200_leftImg8bit.png', 'sun_blpteetxpjmjcejm.png', '07_Festplatz_Flugfeld_000003_000340_leftImg8bit.png', '12_Umberto_Nobile_Str_000001_000280_leftImg8bit.png', '07_Festplatz_Flugfeld_000003_000320_leftImg8bit.png', '05_Schafgasse_1_000012_000220_leftImg8bit.png', 'sun_bcqjcrtydolfnxqd.png', 'sun_bvhyciwhwphjbpjz.png', '04_Maurener_Weg_8_000003_000130_leftImg8bit.png', '02_Hanns_Klemm_Str_44_000014_000200_leftImg8bit.png', '04_Maurener_Weg_8_000004_000210_leftImg8bit.png', '04_Maurener_Weg_8_000008_000180_leftImg8bit.png', 'sun_aaaenaoynzhoyheo.png', 'sun_aqvldktdprlskoki.png', 'sun_bjlpzthlefdpouad.png', 'lindau_000016_000019_leftImg8bit.png', 'frankfurt_000001_025921_leftImg8bit.png', '07_Festplatz_Flugfeld_000000_000260_leftImg8bit.png'}
+    previous_export_set = set()
     print(previous_export_set)
 
     all_results = []
+    category_results = {}
 
     config = tf.ConfigProto(allow_soft_placement=True)
     # config.gpu_options.per_process_gpu_memory_fraction=0.8
@@ -195,13 +197,13 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             #     print("skipping")
             #     continue
 
-            from libs import perlin
-            h,w = placeholder_tensor.shape.as_list()[1:3]
-            #img_raw = np.expand_dims((perlin.make_perlin(10,h,w)*255).astype(np.uint8),0)
-            m = np.mean(img_raw,(0,1,2))
-            s = np.std(img_raw,(0,1,2))
-            _channel_means = [123.68, 116.779, 103.939]
-            norm = np.clip(img_raw - m + _channel_means,0,255)
+            # from libs import perlin
+            # h,w = placeholder_tensor.shape.as_list()[1:3]
+            # #img_raw = np.expand_dims((perlin.make_perlin(10,h,w)*255).astype(np.uint8),0)
+            # m = np.mean(img_raw,(0,1,2))
+            # s = np.std(img_raw,(0,1,2))
+            # _channel_means = [123.68, 116.779, 103.939]
+            # norm = np.clip(img_raw - m + _channel_means,0,255)
             #img_raw = norm
             #import pdb; pdb.set_trace()
 
@@ -212,14 +214,13 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             else:
                 processed_input = img_raw
 
-            ood1 = sess.run(ood_score, feed_dict={placeholder_tensor: processed_input, annot_pl: annot_raw, name_pl: image_path})
-            ood2 = sess.run(ood_score, feed_dict={placeholder_tensor: img_raw, annot_pl: annot_raw, name_pl: image_path})
-            plt.figure()
-            plt.imshow(ood1[0,...,0])
-            plt.figure()
-            plt.imshow(ood2[0,...,0])
-            plt.show()
-            import pdb; pdb.set_trace()
+            # ood1 = sess.run(ood_score, feed_dict={placeholder_tensor: processed_input, annot_pl: annot_raw, name_pl: image_path})
+            # ood2 = sess.run(ood_score, feed_dict={placeholder_tensor: img_raw, annot_pl: annot_raw, name_pl: image_path})
+            # plt.figure()
+            # plt.imshow(ood1[0,...,0])
+            # plt.figure()
+            # plt.imshow(ood2[0,...,0])
+            # plt.show()
 
             feed_dict = {
                 placeholder_tensor: processed_input,
@@ -229,20 +230,36 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
             feed_dict.update(feed)
 
+            # all_pred_do = []
+            # for tempi in range(2):
+            #     all_pred_do.append(sess.run(processor.stacked_pred, feed_dict))
+
             sess.run(reset_metric)
 
             res = {}
             for f in fetch:
                 #print("running", f)
                 res.update(sess.run(f, feed_dict, options=run_options))
-
+            
             roc, iou = sess.run([roc_points, iou_points])
 
             result = processor.post_process(res)
 
             all_results.append([save_name, result["auroc"],result["aupr"],result["max_iou"],result["fpr_at_tpr"],result["detection_error"]])
             
-            print(idx/num_step, "          ", end="\r")
+            # category = save_name.replace("SUN2012/Images/","").split("/")[1]
+            # print(idx/num_step,":", category, "          ", end="\r")
+
+            # intresting_result = np.sum(np.logical_and(annot_raw >= 19, annot_raw != 255))/np.prod(annot_raw.shape) > 0.005
+
+            # if intresting_result:
+            #     if category not in category_results:
+            #         category_results[category] = {"auroc": [], "aupr": [], "max_iou": [], "fpr_at_tpr": [], "detection_error": []}
+            #     category_results[category]["auroc"].append(result["auroc"])
+            #     category_results[category]["aupr"].append(result["aupr"])
+            #     category_results[category]["max_iou"].append(result["max_iou"])
+            #     category_results[category]["fpr_at_tpr"].append(result["fpr_at_tpr"])
+            #     category_results[category]["detection_error"].append(result["detection_error"])
 
             # cur_point = sess.run([pct_ood_gt, ood_mean, ood_median], feed_dict)
             # print(cur_point)
@@ -251,7 +268,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             # print(result["auroc"], np.sum(np.logical_and(annot_raw >= 19, annot_raw != 255))/np.prod(annot_raw.shape))
 
             # intresting_result = result["auroc"] > 0.9 or (result["auroc"] > 0.0001 and result["auroc"] < 0.1)
-            # intresting_result &= np.sum(np.logical_and(annot_raw >= 19, annot_raw != 255))/np.prod(annot_raw.shape) > 0.005
+            # intresting_result = np.sum(np.logical_and(annot_raw >= 19, annot_raw != 255))/np.prod(annot_raw.shape) > 0.005
 
             previous_export = False
             if True or previous_export:
@@ -266,6 +283,10 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 out_img = img_raw[0][..., ::-1].astype(np.uint8)
                 out_pred = colour_pred[0][..., ::-1].astype(np.uint8)
                 out_map = output_image[0,...,0]
+                # plt.imshow(out_map)
+                # plt.show()
+                # import pdb; pdb.set_trace()
+                #{"mean_sub": processor.mean_sub,"img_dist": processor.img_dist,"bad_pixel": processor.bad_pixel,"var_inv_tile": processor.var_inv_tile,"left": processor.left}
                 out_annot = new_annot[0][..., ::-1].astype(np.uint8)
 
                 iou_i = np.argmax(iou)
@@ -274,15 +295,15 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 iou_t = threshs[iou_i]
                 roc_t = threshs[roc_i]
 
-                roc_select = ((output_image[0,...,0]) > roc_t).astype(np.uint8)*255
-                iou_select = ((output_image[0,...,0]) > iou_t).astype(np.uint8)*255
+                # roc_select = ((output_image[0,...,0]) > roc_t).astype(np.uint8)*255
+                # iou_select = ((output_image[0,...,0]) > iou_t).astype(np.uint8)*255
 
-                overlay = out_pred #cv2.addWeighted(out_pred, 0.5, out_img, 0.5, 0)
+                # overlay = out_pred #cv2.addWeighted(out_pred, 0.5, out_img, 0.5, 0)
 
-                cv2.imshow("image", cv2.resize(out_img, (0,0), fx=0.9, fy=0.9))
-                cv2.imshow("uncertainty", cv2.resize(out_map, (0,0), fx=0.9, fy=0.9))
-                cv2.imshow("annot", cv2.resize(out_annot, (0,0), fx=0.9, fy=0.9))
-                cv2.imshow("prediction", cv2.resize(overlay, (0,0), fx=0.9, fy=0.9))
+                # cv2.imshow("image", cv2.resize(out_img, (0,0), fx=0.9, fy=0.9))
+                # cv2.imshow("uncertainty", cv2.resize(out_map, (0,0), fx=0.9, fy=0.9))
+                # cv2.imshow("annot", cv2.resize(out_annot, (0,0), fx=0.9, fy=0.9))
+                # cv2.imshow("prediction", cv2.resize(overlay, (0,0), fx=0.9, fy=0.9))
 
                 print(cur_path)
 
@@ -292,6 +313,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                     map_save_path = os.path.join(save_folder, "map")
                     pred_save_path = os.path.join(save_folder, "pred")
                     annot_save_path = os.path.join(save_folder, "annot")
+                    
                     # roc_save_path = os.path.join(save_folder, "roc")
                     # iou_save_path = os.path.join(save_folder, "iou")
                     # for f in [img_save_path, map_save_path, pred_save_path, annot_save_path, roc_save_path, iou_save_path]:
@@ -305,24 +327,35 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                     # cv2.imwrite(os.path.join(iou_save_path, save_name), iou_select)
 
                 do_save()
+                break
+                # if previous_export:
+                #     do_save()
+                #     #previous_export_set.remove(save_name)
+                #     if len(previous_export_set) == 0:
+                #         break
+                # else: #let us decide
+                #     while True:
+                #         key = cv2.waitKey()
+                #         if key == 27: #escape
+                #             return
+                #         elif key == 32: #space
+                #             break
+                #         elif key == 115: #s
+                #             do_save()
+                #             print("saved!")
+                #         elif key == 98: #b
+                #             import pdb; pdb.set_trace()
 
-                if previous_export:
-                    do_save()
-                    #previous_export_set.remove(save_name)
-                    if len(previous_export_set) == 0:
-                        break
-                else: #let us decide
-                    while True:
-                        key = cv2.waitKey()
-                        if key == 27: #escape
-                            return
-                        elif key == 32: #space
-                            break
-                        elif key == 115: #s
-                            do_save()
-                            print("saved!")
-                        elif key == 98: #b
-                            import pdb; pdb.set_trace()
+        # print()
+        # csv_file_name = "category_score/" + processor.name + ".csv"
+        # os.makedirs("category_score", exist_ok=True)
+        # with open(csv_file_name, "w") as csv:
+        #     csv.write("category,auroc,aupr,max_iou,fpr_at_tpr,detection_error,count\n")
+        #     for c in sorted(list(category_results.keys())):
+        #         csv.write(c + ",")
+        #         for metric_name in ["auroc","aupr","max_iou","fpr_at_tpr","detection_error"]:
+        #             csv.write(str(np.mean(category_results[c][metric_name])) + ",")
+        #         csv.write(str(len(category_results[c]["auroc"])) + "\n")
 
         meta = "full_export/" + processor.name + "/meta.csv"
         with open(meta, "w") as f:

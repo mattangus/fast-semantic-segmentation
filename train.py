@@ -77,6 +77,7 @@ flags.DEFINE_boolean('image_summaries', False, '')
 
 flags.DEFINE_boolean("log_memory", False, "")
 
+flags.DEFINE_boolean("sync_bn", False, "sync bn accross gpu. This is pretty slow")
 
 def main(_):
     tf.gfile.MakeDirs(FLAGS.logdir)
@@ -118,7 +119,8 @@ def main(_):
         max_checkpoints_to_keep=FLAGS.max_checkpoints_to_keep,
         save_interval_secs=FLAGS.save_interval_secs,
         image_summaries=FLAGS.image_summaries,
-        log_memory=FLAGS.log_memory)
+        log_memory=FLAGS.log_memory,
+        sync_bn_accross_gpu=FLAGS.sync_bn)
 
 
 if __name__ == '__main__':

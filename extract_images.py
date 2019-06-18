@@ -2,10 +2,17 @@ from experiment_mgr import image_extractor as ie
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument("ptype", type=int)
+parser.add_argument("--ptype", type=int)
+parser.add_argument("--gpus", type=str, default="0")
+parser.add_argument("--no_gpu", action="store_true", default=False)
 args = parser.parse_args()
 
 assert args.ptype in [0,1,2,3,4,5]
+for g in args.gpus.split(","):
+    try:
+        int(g)
+    except ex:
+        print("'" + g + "' is an invalid gpu number")
 
 drop = 0 #
 conf = 1 #
@@ -16,17 +23,19 @@ entropy = 5
 
 mode = args.ptype
 
-gpus = "0"
+gpus = args.gpus
+if args.no_gpu:
+    gpus = ""
 is_debug = True
 
 if mode == drop:
     model_config = "configs/model/pspnet_dropout.config"
-    data_config = "configs/data/sun_eval.config"
+    data_config = "configs/data/uniform_eval.config"
     trained_checkpoint = "remote/train_logs/dropout/model.ckpt-31273"
     pad_to_shape = "1025,2049"
     processor_type = "Dropout"
     annot_type = "ood"
-    kwargs = {"num_runs": 4,}
+    kwargs = {"num_runs": 10,}
 
     ie.extract_images(gpus, model_config, data_config,
                         trained_checkpoint, pad_to_shape,
@@ -34,12 +43,12 @@ if mode == drop:
 
 elif mode == conf:
     model_config = "configs/model/pspnet_confidence.config"
-    data_config = "configs/data/sun_eval.config"
+    data_config = "configs/data/uniform_eval.config"
     trained_checkpoint = "remote/train_logs/confidence/model.ckpt-13062"
     pad_to_shape = "1025,2049"
     processor_type = "Confidence"
     annot_type = "ood"
-    kwargs = {"epsilon": 0.01}
+    kwargs = {"epsilon": 0.0004}
 
     ie.extract_images(gpus, model_config, data_config,
                         trained_checkpoint, pad_to_shape,
@@ -49,12 +58,12 @@ elif mode == mahal:
     eval_dir = "remote/eval_logs/resnet_dim/"
 
     model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/sun_eval.config"
+    data_config = "configs/data/uniform_eval.config"
     trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
     pad_to_shape = "1025,2049"
     processor_type = "Mahal"
     annot_type = "ood"
-    kwargs = {"epsilon": 0.0, "eval_dir": eval_dir, "global_cov": True, "global_mean": False,}
+    kwargs = {"epsilon": 0.000, "eval_dir": eval_dir, "global_cov": True, "global_mean": False,}
 
     ie.extract_images(gpus, model_config, data_config,
                         trained_checkpoint, pad_to_shape,
@@ -62,7 +71,7 @@ elif mode == mahal:
 
 elif mode == softmax:
     model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/moose_eval.config"
+    data_config = "configs/data/uniform_eval.config"
     #trained_checkpoint = "tune_all_logs/all/model.ckpt-5780"
     trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
     pad_to_shape = "1025,2049"
@@ -76,13 +85,13 @@ elif mode == softmax:
 
 elif mode == odin:
     model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/cityscapes_eval.config"
+    data_config = "configs/data/uniform_eval.config"
     trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
     pad_to_shape = "1025,2049"
     processor_type = "ODIN"
     annot_type = "ood"
     # kwargs = {"epsilon": 0.00002, "t_value": 10}
-    kwargs = {"epsilon": 0.0004, "t_value": 1}
+    kwargs = {"epsilon": 0.000, "t_value": 10}
 
     ie.extract_images(gpus, model_config, data_config,
                         trained_checkpoint, pad_to_shape,
@@ -90,7 +99,7 @@ elif mode == odin:
 
 elif mode == entropy:
     model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/sun_eval.config"
+    data_config = "configs/data/uniform_eval.config"
     trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
     pad_to_shape = "1025,2049"
     processor_type = "Entropy"

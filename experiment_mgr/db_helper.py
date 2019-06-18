@@ -174,7 +174,8 @@ def upload_result(run_args, print_buffer, result, had_error):
     exp_res = list(experiment.result)
     if len(exp_res) > 0 and not exp_res[0].had_error:
         print("uploading previous result")
-        import pdb; pdb.set_trace()
+        print("ignoring")
+        return
     elif len(exp_res) == 1 and exp_res[0].had_error:
         print("updating result")
         result = exp_res[0]

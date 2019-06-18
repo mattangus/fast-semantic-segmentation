@@ -24,6 +24,8 @@ from post_process.entropy import EntropyProcessor
 from protos.config_reader import read_config
 from libs.exporter import deploy_segmentation_inference_graph
 
+tf.logging.set_verbosity(tf.logging.ERROR)
+
 def ood_annot(annot, prediction, num_classes):
     annot = tf.to_float(annot >= num_classes)
     return annot, 2
@@ -62,7 +64,6 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     batch = 1
 
     dataset = dataset.batch(batch, drop_remainder=True)
-    dataset = dataset.apply(tf.data.experimental.ignore_errors())
     data_iter = dataset.make_one_shot_iterator()
     input_dict = data_iter.get_next()
 
@@ -136,11 +137,21 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
         sess.graph.finalize()
 
+        # run_meta = tf.RunMetadata()
+        # opts = tf.profiler.ProfileOptionBuilder.float_operation()
+        # flops = tf.profiler.profile(sess.graph, run_meta=run_meta, cmd='op', options=opts)
+        # if flops is not None:
+        #     print('NUMBER OF FLOPS:', flops.total_float_ops)
+        # num_param = np.sum([np.prod([s for s in v.get_shape().as_list() if s is not None]) for v in tf.global_variables()])
+        # print("NUMBER OF PARAMETERS:", num_param)
+        # sys.exit(0)
+
         # temp_fw = tf.summary.FileWriter("temptb", graph=sess.graph)
         # temp_fw.flush()
         # temp_fw.close()
 
         #one sun image is bad
+        avg_time = 0
         num_step -= 1
 
         print("running for", num_step, "steps")
@@ -192,8 +203,10 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             for v in result:
                 if v not in print_exclude:
                     to_print[v] = result[v]
-            print('{0:.4f} iter: {1}, {2}'.format(elapsed, idx+1, to_print), end=end)
-        print('{0:.4f} iter: {1}, {2}'.format(elapsed, idx+1, to_print))
+            if idx > 0:
+                avg_time += (elapsed - avg_time)/(idx)
+            print('{0:.4f}({1:.4f}): {2}, {3}'.format(elapsed, avg_time, idx+1, to_print), end=end)
+        print('{0:.4f}({1:.4f}): {2}, {3}'.format(elapsed, avg_time, idx+1, to_print))
         return result
 
 
@@ -238,7 +251,7 @@ def run_experiment(gpus, model_config, data_config,
         print(traceback.format_exc())
         had_error = True
         result = None
-    
+
     sys.stdout = sys.__stdout__
     sys.stderr = sys.__stderr__
     tf.reset_default_graph()

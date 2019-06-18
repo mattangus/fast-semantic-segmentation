@@ -206,7 +206,7 @@ def train_segmentation_model(create_model_fn,
                 # Caution since this is very slow. Might not be needed
                 update_ops = []
                 for idx in range(num_clones):
-                    nth_clone_sope = deploy_config.clone_scope(0)
+                    nth_clone_sope = deploy_config.clone_scope(idx)
                     update_ops.extend(tf.get_collection(
                         tf.GraphKeys.UPDATE_OPS, nth_clone_sope))
             else:
@@ -328,7 +328,7 @@ def train_segmentation_model(create_model_fn,
 
         session_config = tf.ConfigProto(
             allow_soft_placement=True, log_device_placement=False)
-        #session_config.gpu_options.allow_growth = True
+        session_config.gpu_options.allow_growth = True
 
         #load_vars = [v for v in tf.global_variables() if "Dont_Load" not in v.op.name]
 
@@ -395,6 +395,6 @@ def train_segmentation_model(create_model_fn,
             startup_delay_steps=startup_delay_steps,
             init_fn=init_fn,
             summary_op=summary_op,
-            save_summaries_secs=3,
+            save_summaries_secs=120,
             save_interval_secs=save_interval_secs,
             saver=saver)

@@ -1,3 +1,5 @@
+from pprint import pprint
+
 from . import db
 from . import db_helper as dbh
 
@@ -93,11 +95,11 @@ def get_result_train(train_result, eval_result):
     gt = lambda x,y: x > y
 
     for r in train_result:
-        update_best(r, cur_best, "auroc", lt, eval_arg_ids)
-        update_best(r, cur_best, "aupr", lt, eval_arg_ids)
-        update_best(r, cur_best, "fpr_at_tpr", gt, eval_arg_ids)
+        update_best(r, cur_best, "auroc",           lt, eval_arg_ids)
+        update_best(r, cur_best, "aupr",            lt, eval_arg_ids)
+        update_best(r, cur_best, "fpr_at_tpr",      gt, eval_arg_ids)
         update_best(r, cur_best, "detection_error", gt, eval_arg_ids)
-        update_best(r, cur_best, "max_iou", lt, eval_arg_ids)
+        update_best(r, cur_best, "max_iou",         lt, eval_arg_ids)
     
     best_train = cur_best["auroc"], cur_best["aupr"], cur_best["fpr_at_tpr"], cur_best["detection_error"], cur_best["max_iou"]
 
@@ -119,7 +121,7 @@ def get_result_train(train_result, eval_result):
 def format_row(dataset, p_type, values):
     values = ["{:0.5f}".format(v) for v in values]
     vals = "\t& ".join(values)
-    ret = "{}\t& {}\t& {}".format(dataset, p_type, vals) + " \\\\"
+    ret = "{}\t& {}\t& {}".format(p_type, dataset.replace("_eval",""), vals) + " \\\\"
     ret = ret.replace("_", "\\_")
     return ret
 
@@ -159,6 +161,8 @@ def main():
     
     all_results = []
 
+    chosen_args = {}
+
     for g in groups:
         for data in groups[g]:
             data_print = data
@@ -183,14 +187,21 @@ def main():
 
             order = ["auroc", "aupr", "fpr_at_tpr", "detection_error", "max_iou"]
             to_print = [res[f] for f, res in zip(order, cur_result)]
+            selected_kwargs = db.KeyWordArgs.select().where((db.KeyWordArgs.group_id == cur_result[0].arg_group_id))
+            chosen_args[g[2]] = [(kw.name, kw.value) for kw in selected_kwargs]
             all_results.append((data_print.replace("configs/data/", "").replace(".config", ""), g[2], to_print))
+    
+    print("Selected Args:")
+    pprint(chosen_args)
 
-    first_sort = {"sun_eval": 0, "sun_train": 0, 
-                    "lostfound_eval": 1, "lostfound_train": 1,
-                    "uniform_eval": 2, "uniform_train": 2,
-                    "normal_eval": 3, "normal_train": 3}
-    second_sort = {"MaxSoftmax": 0, "ODIN": 1, "Mahal": 2, "Confidence": 3, "Dropout": 4, "Entropy": 5}
-    all_results = sorted(all_results, key= lambda x: (first_sort[x[0]], second_sort[x[1]]))
+    second_sort = {"sun_eval":          0, "sun_train":         0, 
+                    "coco_eval":       1, "coco_train":        1,
+                    "lostfound_eval":   2, "lostfound_train":   2,
+                    "uniform_eval":     3, "uniform_train":     3,
+                    "normal_eval":      4, "normal_train":      4,
+                    "perlin_eval":      5, "perlin_train":      5}
+    first_sort = {"MaxSoftmax": 0, "ODIN": 1, "Mahal": 2, "Confidence": 3, "Dropout": 4, "Entropy": 5}
+    all_results = sorted(all_results, key= lambda x: (first_sort[x[1]], second_sort[x[0]]))
 
     format_results = list(map(lambda x: format_row(*x), all_results))
 
