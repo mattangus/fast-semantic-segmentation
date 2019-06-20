@@ -15,7 +15,7 @@ def get_all_to_run():
     #builder_classes = [eb.MaxSoftmaxRunBuilder, eb.MahalRunBuilder, eb.DropoutRunBuilder, eb.ConfidenceRunBuilder]
     #datasets = [("ood", eb.sun_experiment_set), ("error", eb.city_experiment_set), ("ood", eb.normal_experiment_set), ("ood", eb.uniform_experiment_set)]
     #only run ood experiments first
-    datasets = [("ood", eb.sun_experiment_set), ("ood", eb.normal_experiment_set), ("ood", eb.uniform_experiment_set), ("ood", eb.perlin_experiment_set), ("ood", eb.coco_experiment_set)]
+    datasets = [("ood", eb.sun_experiment_set), ("ood", eb.normal_experiment_set), ("ood", eb.uniform_experiment_set), ("ood", eb.perlin_experiment_set), ("ood", eb.coco_city_experiment_set)]
 
     builders = []
     for bc in builder_classes:

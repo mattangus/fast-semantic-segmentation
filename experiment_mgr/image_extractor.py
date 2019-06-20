@@ -298,12 +298,12 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 # roc_select = ((output_image[0,...,0]) > roc_t).astype(np.uint8)*255
                 # iou_select = ((output_image[0,...,0]) > iou_t).astype(np.uint8)*255
 
-                # overlay = out_pred #cv2.addWeighted(out_pred, 0.5, out_img, 0.5, 0)
+                overlay = cv2.addWeighted(out_pred, 0.5, out_img, 0.5, 0)
 
-                # cv2.imshow("image", cv2.resize(out_img, (0,0), fx=0.9, fy=0.9))
-                # cv2.imshow("uncertainty", cv2.resize(out_map, (0,0), fx=0.9, fy=0.9))
-                # cv2.imshow("annot", cv2.resize(out_annot, (0,0), fx=0.9, fy=0.9))
-                # cv2.imshow("prediction", cv2.resize(overlay, (0,0), fx=0.9, fy=0.9))
+                cv2.imshow("image", cv2.resize(out_img, (0,0), fx=0.9, fy=0.9))
+                cv2.imshow("uncertainty", cv2.resize(out_map, (0,0), fx=0.9, fy=0.9))
+                cv2.imshow("annot", cv2.resize(out_annot, (0,0), fx=0.9, fy=0.9))
+                cv2.imshow("prediction", cv2.resize(overlay, (0,0), fx=0.9, fy=0.9))
 
                 print(cur_path)
 
@@ -326,25 +326,24 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                     # cv2.imwrite(os.path.join(roc_save_path, save_name), roc_select)
                     # cv2.imwrite(os.path.join(iou_save_path, save_name), iou_select)
 
-                do_save()
-                break
-                # if previous_export:
-                #     do_save()
-                #     #previous_export_set.remove(save_name)
-                #     if len(previous_export_set) == 0:
-                #         break
-                # else: #let us decide
-                #     while True:
-                #         key = cv2.waitKey()
-                #         if key == 27: #escape
-                #             return
-                #         elif key == 32: #space
-                #             break
-                #         elif key == 115: #s
-                #             do_save()
-                #             print("saved!")
-                #         elif key == 98: #b
-                #             import pdb; pdb.set_trace()
+                # do_save()
+                if previous_export:
+                    do_save()
+                    #previous_export_set.remove(save_name)
+                    if len(previous_export_set) == 0:
+                        break
+                else: #let us decide
+                    while True:
+                        key = cv2.waitKey()
+                        if key == 27: #escape
+                            return
+                        elif key == 32: #space
+                            break
+                        elif key == 115: #s
+                            do_save()
+                            print("saved!")
+                        elif key == 98: #b
+                            import pdb; pdb.set_trace()
 
         # print()
         # csv_file_name = "category_score/" + processor.name + ".csv"

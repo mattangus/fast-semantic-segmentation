@@ -129,7 +129,7 @@ def _create_tf_record(images, labels, output_path, target_aspect=None):
     writer = tf.python_io.TFRecordWriter(output_path, options=options)
     if FLAGS.shuffle:
         images, labels = zip(*random.sample(list(zip(images, labels)), len(images)))
-    
+
     write_num = 0
     for idx, image in enumerate(images):
         if write_num % 100 == 0 or idx == (len(images)):

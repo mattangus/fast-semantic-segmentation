@@ -58,7 +58,7 @@ class ConfidenceProcessor(pp.PostProcessor):
         self.uncertainty = 1. - tf.nn.sigmoid(conf_logits)
 
         with tf.device(self.pre_process_gpu):
-            self.metrics, self.update = metrics.get_metric_ops(self.annot, self.uncertainty, self.weights)
+            self.metrics, self.update, self.all_metrics = metrics.get_metric_ops(self.annot, self.uncertainty, self.weights)
 
     @doc_inherit
     def get_init_feed(self):
@@ -79,6 +79,7 @@ class ConfidenceProcessor(pp.PostProcessor):
     @doc_inherit
     def get_fetch_dict(self):
         fetch = [{"update": self.update}, {"metrics": self.metrics}]
+        fetch.append({"all_metrics": self.all_metrics})
         return fetch
 
     @doc_inherit
@@ -88,6 +89,7 @@ class ConfidenceProcessor(pp.PostProcessor):
     @doc_inherit
     def post_process(self, numpy_dict):
         results = metrics.get_metric_values(numpy_dict["metrics"])
+        best_thresh_results = metrics.get_best_metric_values(numpy_dict["all_metrics"], results)
 
         return results
     

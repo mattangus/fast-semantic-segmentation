@@ -30,7 +30,7 @@ is_debug = True
 
 if mode == drop:
     model_config = "configs/model/pspnet_dropout.config"
-    data_config = "configs/data/uniform_eval.config"
+    data_config = "configs/data/coco_city_eval.config"
     trained_checkpoint = "remote/train_logs/dropout/model.ckpt-31273"
     pad_to_shape = "1025,2049"
     processor_type = "Dropout"
@@ -43,7 +43,7 @@ if mode == drop:
 
 elif mode == conf:
     model_config = "configs/model/pspnet_confidence.config"
-    data_config = "configs/data/uniform_eval.config"
+    data_config = "configs/data/coco_city_eval.config"
     trained_checkpoint = "remote/train_logs/confidence/model.ckpt-13062"
     pad_to_shape = "1025,2049"
     processor_type = "Confidence"
@@ -58,7 +58,7 @@ elif mode == mahal:
     eval_dir = "remote/eval_logs/resnet_dim/"
 
     model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/uniform_eval.config"
+    data_config = "configs/data/coco_city_eval.config"
     trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
     pad_to_shape = "1025,2049"
     processor_type = "Mahal"
@@ -71,7 +71,7 @@ elif mode == mahal:
 
 elif mode == softmax:
     model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/uniform_eval.config"
+    data_config = "configs/data/coco_city_eval.config"
     #trained_checkpoint = "tune_all_logs/all/model.ckpt-5780"
     trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
     pad_to_shape = "1025,2049"
@@ -85,7 +85,7 @@ elif mode == softmax:
 
 elif mode == odin:
     model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/uniform_eval.config"
+    data_config = "configs/data/coco_city_eval.config"
     trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
     pad_to_shape = "1025,2049"
     processor_type = "ODIN"
@@ -99,7 +99,7 @@ elif mode == odin:
 
 elif mode == entropy:
     model_config = "configs/model/pspnet_full_dim.config"
-    data_config = "configs/data/uniform_eval.config"
+    data_config = "configs/data/coco_city_eval.config"
     trained_checkpoint = "remote/train_logs/resnet_dim/model.ckpt-1272"
     pad_to_shape = "1025,2049"
     processor_type = "Entropy"

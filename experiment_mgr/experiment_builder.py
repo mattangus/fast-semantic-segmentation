@@ -21,6 +21,7 @@ def _filter_already_run(arg_list):
 #ood
 sun_experiment_set = ExperimentDataset("configs/data/sun_train.config", "configs/data/sun_eval.config")
 coco_experiment_set = ExperimentDataset("configs/data/coco_train.config", "configs/data/coco_eval.config")
+coco_city_experiment_set = ExperimentDataset("configs/data/coco_city_train.config", "configs/data/coco_city_eval.config")
 lost_experiment_set = ExperimentDataset("configs/data/lostfound_train.config", "configs/data/lostfound_eval.config")
 normal_experiment_set = ExperimentDataset("configs/data/normal_train.config", "configs/data/normal_eval.config")
 uniform_experiment_set = ExperimentDataset("configs/data/uniform_train.config", "configs/data/uniform_eval.config")

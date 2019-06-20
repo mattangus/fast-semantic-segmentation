@@ -118,7 +118,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     num_step = num_images // batch
 
     np.set_printoptions(threshold=2, edgeitems=1)
-    print_exclude = {"tp", "fp", "tn", "fn"}
+    print_exclude = {"tp", "fp", "tn", "fn", "pred", "new_pred"}
 
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.per_process_gpu_memory_fraction=1.
@@ -198,6 +198,24 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             if idx % 1 == 0:
                 #every now and then do regular print
                 end = "\n"
+
+            # pred = res["metrics"]["pred"]
+            # new_pred = res["metrics"]["new_pred"]
+            # from post_process.validation_metrics import filter_ood
+            # pred_0 = filter_ood(pred, 110)
+            # pred_1 = filter_ood(pred, 110, dilate=7, erode=7)
+            # pred_2 = filter_ood(pred, 110, dilate=9, erode=9)
+            # # import pdb; pdb.set_trace()
+            # import matplotlib.pyplot as plt
+            # plt.subplot(2,2,1)
+            # plt.imshow(pred[0])
+            # plt.subplot(2,2,2)
+            # plt.imshow(np.squeeze(pred_0))
+            # plt.subplot(2,2,3)
+            # plt.imshow(np.squeeze(pred_1))
+            # plt.subplot(2,2,4)
+            # plt.imshow(np.squeeze(pred_2))
+            # plt.show()
 
             to_print = {}
             for v in result:

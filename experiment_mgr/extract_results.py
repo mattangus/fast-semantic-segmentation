@@ -195,11 +195,12 @@ def main():
     pprint(chosen_args)
 
     second_sort = {"sun_eval":          0, "sun_train":         0, 
-                    "coco_eval":       1, "coco_train":        1,
-                    "lostfound_eval":   2, "lostfound_train":   2,
-                    "uniform_eval":     3, "uniform_train":     3,
-                    "normal_eval":      4, "normal_train":      4,
-                    "perlin_eval":      5, "perlin_train":      5}
+                    "coco_eval":        1, "coco_train":        1,
+                    "coco_city_eval":   2, "coco_city_train":   2,
+                    "lostfound_eval":   3, "lostfound_train":   3,
+                    "uniform_eval":     4, "uniform_train":     4,
+                    "normal_eval":      5, "normal_train":      5,
+                    "perlin_eval":      6, "perlin_train":      6}
     first_sort = {"MaxSoftmax": 0, "ODIN": 1, "Mahal": 2, "Confidence": 3, "Dropout": 4, "Entropy": 5}
     all_results = sorted(all_results, key= lambda x: (first_sort[x[1]], second_sort[x[0]]))
 

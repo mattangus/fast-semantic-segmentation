@@ -45,7 +45,7 @@ class EntropyProcessor(pp.PostProcessor):
         log_pred = (max_sub - tf.log(tf.reduce_sum(tf.exp(max_sub), -1, keepdims=True)+1.e-5))
         self.prediction = -tf.reduce_mean(smax*log_pred, -1)
 
-        self.metrics, self.update = metrics.get_metric_ops(self.annot, self.prediction, self.weights)
+        self.metrics, self.update, self.all_metrics = metrics.get_metric_ops(self.annot, self.prediction, self.weights)
 
     @doc_inherit
     def get_init_feed(self):
@@ -61,7 +61,7 @@ class EntropyProcessor(pp.PostProcessor):
 
     @doc_inherit
     def get_fetch_dict(self):
-        return [{"update": self.update}, {"metrics": self.metrics}]
+        return [{"update": self.update}, {"metrics": self.metrics}, {"all_metrics": self.all_metrics}]
     
     @doc_inherit
     def get_feed_dict(self):
@@ -70,6 +70,7 @@ class EntropyProcessor(pp.PostProcessor):
     @doc_inherit
     def post_process(self, numpy_dict):
         results = metrics.get_metric_values(numpy_dict["metrics"])
+        best_thresh_results = metrics.get_best_metric_values(numpy_dict["all_metrics"], results)
 
         return results
     

@@ -41,7 +41,7 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
 
         self.interp_logits = tf.image.resize_bilinear(unscaled_logits, pred_shape[1:3])
         self.prediction = 1.0 - tf.reduce_max(tf.nn.softmax(self.interp_logits/self.t_value), -1, keepdims=True)
-        self.metrics, self.update = metrics.get_metric_ops(self.annot, self.prediction, self.weights)
+        self.metrics, self.update, self.all_metrics = metrics.get_metric_ops(self.annot, self.prediction, self.weights)
 
     @doc_inherit
     def get_init_feed(self):
@@ -61,7 +61,7 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
 
     @doc_inherit
     def get_fetch_dict(self):
-        return [{"update": self.update}, {"metrics": self.metrics}]
+        return [{"update": self.update}, {"metrics": self.metrics}, {"all_metrics": self.all_metrics}]
     
     @doc_inherit
     def get_feed_dict(self):
@@ -70,7 +70,7 @@ class MaxSoftmaxProcessor(pp.PostProcessor):
     @doc_inherit
     def post_process(self, numpy_dict):
         results = metrics.get_metric_values(numpy_dict["metrics"])
-
+        best_thresh_results = metrics.get_best_metric_values(numpy_dict["all_metrics"], results)
         return results
     
     @doc_inherit

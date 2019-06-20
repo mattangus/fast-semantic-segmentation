@@ -69,7 +69,7 @@ class DropoutProcessor(pp.PostProcessor):
         self.norm_variance = (self.interp_variance) / max_var
 
         with tf.device(self.pre_process_gpu):
-            self.metrics, self.update = metrics.get_metric_ops(self.annot, self.norm_variance, self.weights)
+            self.metrics, self.update, self.all_metrics = metrics.get_metric_ops(self.annot, self.norm_variance, self.weights)
 
     @doc_inherit
     def get_init_feed(self):
@@ -91,6 +91,7 @@ class DropoutProcessor(pp.PostProcessor):
         #fetch.append({"res": self.norm_variance,})
         fetch.append({"update": self.update})
         fetch.append({"metrics": self.metrics})
+        fetch.append({"all_metrics": self.all_metrics})
         # fetch.append({"reset": self.reset_op})
         return fetch
     
@@ -105,6 +106,7 @@ class DropoutProcessor(pp.PostProcessor):
         # plt.show()
         # import pdb; pdb.set_trace()
         results = metrics.get_metric_values(numpy_dict["metrics"])
+        best_thresh_results = metrics.get_best_metric_values(numpy_dict["all_metrics"], results)
 
         return results
     
