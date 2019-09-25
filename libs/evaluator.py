@@ -9,6 +9,7 @@ import tensorflow as tf
 import seaborn as sb
 import matplotlib.pyplot as plt
 import numpy as np
+import time
 
 from builders import dataset_builder
 from builders import preprocessor_builder as preprocessor
@@ -19,6 +20,33 @@ from libs import metrics
 slim = tf.contrib.slim
 
 prefetch_queue = slim.prefetch_queue
+
+
+class CMLogger(tf.train.SessionRunHook):
+    def __init__(self, cm_op, n_steps, output_dir):
+        tf.train.SessionRunHook.__init__(self)
+        self.cm_op = cm_op
+        self.n_steps = n_steps
+        self.output_dir = output_dir
+        
+    def begin(self):
+        self._step = -1
+
+    def before_run(self, run_context):
+        self._step += 1
+        return tf.train.SessionRunArgs(self.cm_op)  # Asks for loss value.
+
+    def after_run(self, run_context, run_values):
+        if self._step % self.n_steps == 0:
+            cm = run_values.results
+            plt.figure(figsize=[20.48,10.24])
+            sb.heatmap(cm, annot=True)
+            print(os.path.join(self.output_dir, "confusion_matrix.png"))
+            plt.savefig(os.path.join(self.output_dir, "confusion_matrix.png"))
+            plt.close()
+            plt.cla() #clear memory since no display happens
+            plt.clf()
+
 
 
 def create_evaluation_input(create_input_dict_fn,
@@ -265,7 +293,8 @@ def eval_segmentation_model(create_model_fn,
     tf.logging.info('Evaluating over %d samples...',
                     num_examples)
 
-    hooks = []#[tf.train.LoggingTensorHook({"miou": value_op}, every_n_iter=5)]
+    hooks = [tf.train.LoggingTensorHook({"miou": value_op}, every_n_iter=5), CMLogger(conf_op, 20, "sun_eval/resnet_dim/")]
+    # hooks = [tf.train.LoggingTensorHook({"conf_mat": conf_op}, every_n_iter=5)]
     total_eval_examples = num_examples
     if evaluate_single_checkpoint:
         curr_checkpoint = evaluate_single_checkpoint 

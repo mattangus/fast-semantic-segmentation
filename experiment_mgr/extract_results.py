@@ -19,18 +19,19 @@ had_error = 11
 class ResultWrapper(object):
 
     def __init__(self, row):
-        self.model_config = row[0]
-        self.data_config = row[1]
-        self.trained_checkpoint = row[2]
-        self.processor_type = row[3]
-        self.annot_type = row[4]
-        self.arg_group_id = row[5]
-        self.auroc = row[6]
-        self.aupr = row[7]
-        self.fpr_at_tpr = row[8]
-        self.detection_error = row[9]
-        self.max_iou = row[10]
-        self.had_error = row[11]
+        self.model_config =         row[0]
+        self.data_config =          row[1]
+        self.trained_checkpoint =   row[2]
+        self.processor_type =       row[3]
+        self.annot_type =           row[4]
+        self.experiment_id =        row[5]
+        self.arg_group_id =         row[6]
+        self.auroc =                row[7]
+        self.aupr =                 row[8]
+        self.fpr_at_tpr =           row[9]
+        self.detection_error =      row[10]
+        self.max_iou =              row[11]
+        self.had_error =            row[12]
     
     def __getitem__(self, key):
         return self.__dict__[key]
@@ -118,16 +119,16 @@ def get_result_train(train_result, eval_result):
 
     return tuple(result)
 
-def format_row(dataset, p_type, values):
+def format_row(dataset, p_type, values, model_name):
     values = ["{:0.5f}".format(v) for v in values]
     vals = "\t& ".join(values)
-    ret = "{}\t& {}\t& {}".format(p_type, dataset.replace("_eval",""), vals) + " \\\\"
+    ret = "\t{}\t& {}".format(dataset.replace("_eval",""), vals) + " \\\\"
     ret = ret.replace("_", "\\_")
-    return ret
+    return model_name, p_type, ret
 
 def main():
-    create = """CREATE VIEW results_view format_rows
-                select ec.model_config, ec.data_config, ec.trained_checkpoint, ec.processor_type, ec.annot_type, e.arg_group_id, r.auroc, r.aupr, r.fpr_at_tpr, r.detection_error, r.max_iou, r.had_error
+    create = """CREATE VIEW results_view as
+                select ec.model_config, ec.data_config, ec.trained_checkpoint, ec.processor_type, ec.annot_type, e.id as experiment_id, e.arg_group_id, r.auroc, r.aupr, r.fpr_at_tpr, r.detection_error, r.max_iou, r.had_error
                 from experimentconfig as ec, experiment as e, result as r
                 where ec.id == e.config_id
                 and e.id == r.experiment_id"""
@@ -184,28 +185,44 @@ def main():
                     cur_result = get_result_no_train(groups[g][data])
             else:
                 cur_result = get_result_no_train(groups[g][data])
-
+            # import pdb; pdb.set_trace()
+            model_name = g[0].replace("configs/model/", "").replace(".config", "")
             order = ["auroc", "aupr", "fpr_at_tpr", "detection_error", "max_iou"]
             to_print = [res[f] for f, res in zip(order, cur_result)]
             selected_kwargs = db.KeyWordArgs.select().where((db.KeyWordArgs.group_id == cur_result[0].arg_group_id))
             chosen_args[g[2]] = [(kw.name, kw.value) for kw in selected_kwargs]
-            all_results.append((data_print.replace("configs/data/", "").replace(".config", ""), g[2], to_print))
+            
+            all_results.append((data_print.replace("configs/data/", "").replace(".config", ""), g[2], to_print, model_name))
     
     print("Selected Args:")
     pprint(chosen_args)
-
+    # import pdb; pdb.set_trace()
     second_sort = {"sun_eval":          0, "sun_train":         0, 
                     "coco_eval":        1, "coco_train":        1,
                     "coco_city_eval":   2, "coco_city_train":   2,
-                    "lostfound_eval":   3, "lostfound_train":   3,
-                    "uniform_eval":     4, "uniform_train":     4,
-                    "normal_eval":      5, "normal_train":      5,
-                    "perlin_eval":      6, "perlin_train":      6}
-    first_sort = {"MaxSoftmax": 0, "ODIN": 1, "Mahal": 2, "Confidence": 3, "Dropout": 4, "Entropy": 5}
-    all_results = sorted(all_results, key= lambda x: (first_sort[x[1]], second_sort[x[0]]))
+                    "idd_cars_eval":    3, "idd_cars_train":    3,
+                    "lostfound_eval":   4, "lostfound_train":   4,
+                    "uniform_eval":     5, "uniform_train":     5,
+                    "normal_eval":      6, "normal_train":      6,
+                    "perlin_eval":      7, "perlin_train":      7}
+    first_sort = {"MaxSoftmax": 0, "ODIN": 1, "Mahal": 2, "Confidence": 3, "Dropout": 4, "Entropy": 5, "AlEnt": 6}
+    all_results = sorted(all_results, key= lambda x: (first_sort[x[1]], int("pspnet" in x[3]), second_sort[x[0]]))
 
     format_results = list(map(lambda x: format_row(*x), all_results))
-
-    print("auroc, aupr, fpr_at_tpr, detection_error, max_iou")
-    for res in format_results:
+    
+    start = "\pgfplotstableread[row sep=\\\\,col sep=&]{\n" \
+                "\tDataset & AUROC     & AUPRC     & FPRatTPR  & DE        & MaxIoU \\\\"
+    # print("auroc, aupr, fpr_at_tpr, detection_error, max_iou")
+    prev_model_name = None
+    prev_p_type = None
+    for model_name, p_type, res in format_results:
+        if prev_model_name is None or model_name != prev_model_name or p_type != prev_p_type:
+            end = "}\\" + str(prev_model_name) + str(prev_p_type) + "data\n"
+            print(end)
+            print(start)
+            prev_model_name = model_name
+            prev_p_type = p_type
         print(res)
+
+    end = "}\\" + model_name + p_type + "data\n"
+    print(end)

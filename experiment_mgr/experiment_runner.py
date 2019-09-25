@@ -21,6 +21,7 @@ from post_process.max_softmax import MaxSoftmaxProcessor
 from post_process.droput import DropoutProcessor
 from post_process.confidence import ConfidenceProcessor
 from post_process.entropy import EntropyProcessor
+from post_process.alent import AlEntProcessor
 from protos.config_reader import read_config
 from libs.exporter import deploy_segmentation_inference_graph
 
@@ -45,7 +46,8 @@ processor_dict = {
     "ODIN": MaxSoftmaxProcessor,
     "Dropout": DropoutProcessor,
     "Confidence": ConfidenceProcessor,
-    "Entropy": EntropyProcessor
+    "Entropy": EntropyProcessor,
+    "AlEnt": AlEntProcessor
 }
 
 def get_median(v):
@@ -164,7 +166,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
             annot_raw = inputs[2]
             img_raw = inputs[1]
             image_path = inputs[0]
-
+            # print(image_path)
             if preprocess_input is not None:
                 processed_input = sess.run(preprocess_input, feed_dict={placeholder_tensor: img_raw, annot_pl: annot_raw, name_pl: image_path})
             else:
@@ -185,9 +187,19 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
             result = processor.post_process(res)
 
-            # cur = sess.run(ood_values, feed_dict)
+            # cur, disp_annot, disp_weights = sess.run([ood_values, processor.annot, processor.weights], feed_dict)
+            # # from sklearn.metrics import roc_auc_score
+            # # print("sklearn: ", roc_auc_score(np.reshape(disp_annot, [-1]), np.reshape(cur,[-1])))
+            # outimg = cur
             # print(np.mean(cur), np.std(cur))
+            # plt.figure()
             # plt.imshow(cur[0,...,0])
+            # plt.figure()
+            # plt.imshow(disp_annot[0,...,0])
+            # plt.figure()
+            # plt.imshow(disp_weights[0,...,0])
+            # plt.figure()
+            # plt.imshow(annot_raw[0,...,0])
             # plt.show()
 
             # cur_point = sess.run([pct_ood_gt, ood_mean, ood_median], feed_dict)
@@ -247,7 +259,7 @@ def run_experiment(gpus, model_config, data_config,
                     for dim in pad_to_shape.split(',')]
 
         input_reader = pipeline_config.input_reader
-        input_reader.shuffle = False
+        input_reader.shuffle = True
         ignore_label = input_reader.ignore_label
 
         num_classes, segmentation_model = model_builder.build(

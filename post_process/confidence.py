@@ -89,7 +89,7 @@ class ConfidenceProcessor(pp.PostProcessor):
     @doc_inherit
     def post_process(self, numpy_dict):
         results = metrics.get_metric_values(numpy_dict["metrics"])
-        best_thresh_results = metrics.get_best_metric_values(numpy_dict["all_metrics"], results)
+        # best_thresh_results = metrics.get_best_metric_values(numpy_dict["all_metrics"], results)
 
         return results
     

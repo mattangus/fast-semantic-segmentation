@@ -124,6 +124,7 @@ class PSPNetArchitecture(model.SegmentationModel):
                 self.main_class_predictions_key: predictions,
                 self.final_logits_key: final_logits,
                 self.unscaled_logits_key: unscaled_logits }
+                
             # Aux loss as described in PSPNet paper
             if self._is_training and self._use_aux_loss:
                 with tf.variable_scope('AuxPredictions'):
@@ -203,8 +204,6 @@ class PSPNetArchitecture(model.SegmentationModel):
 
     def loss(self, prediction_dict, scope=None):
         losses_dict = {}
-         # TODO: Make this an optional choice. For now only scale
-        # down labels like in original paper
         def _resize_labels_to_logits(labels, logits):
             logits_shape = logits.get_shape().as_list()
             scaled_labels = tf.image.resize_nearest_neighbor(

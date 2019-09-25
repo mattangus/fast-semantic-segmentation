@@ -7,7 +7,7 @@ import helpers
 epsilon = 1.e-5
 
 def _softmax_classification_loss(predictions, labels, ignore_label):
-    #flattened_labels = tf.reshape(labels, shape=[-1])
+    flattened_labels = tf.squeeze(labels,-1) #tf.reshape(labels, shape=[-1])
     num_classes = predictions.get_shape().as_list()[-1]
     #predictions = tf.reshape(predictions, [-1, num_classes])
     #predictions = tf.to_float(predictions)
@@ -146,6 +146,7 @@ def _l2norm_smooth(predictions, labels, ignore_label):
 
 def _confidence_loss(predictions, labels, ignore_label):
     #take the last channel of preds for pixel confidence
+    print("USING CONF LOSS. Output shape:", predictions.shape.as_list())
     confidence = tf.nn.sigmoid(predictions[...,-1:])
 
     #take the rest for predictions

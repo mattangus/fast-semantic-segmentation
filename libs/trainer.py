@@ -12,6 +12,7 @@ from third_party import mem_util
 
 from builders import model_builder
 from builders import dist_builder
+from builders import losses_builder
 from builders import dataset_builder
 from builders import preprocessor_builder
 from builders import optimizer_builder
@@ -265,6 +266,7 @@ def train_segmentation_model(create_model_fn,
                         tf.logging.info('Training variable: %s', var.op.name)
                 trainable_vars = non_frozen_vars
         else:
+            init_fn = None
             tf.logging.info('Not initializing the model from a checkpoint. '
                             'Initializing from scratch!')
 
@@ -310,6 +312,7 @@ def train_segmentation_model(create_model_fn,
                 '%sSegmentationLoss/ScaledPreds:0'% summ_first_clone_scope)
             summaries.add(
               tf.summary.image('VerifyTrainImages/Inputs', input_img))
+            logits = main_preds
             main_preds = tf.cast(tf.expand_dims(tf.argmax(main_preds, -1),-1) * pixel_scaling, tf.uint8)
             summaries.add(
               tf.summary.image('VerifyTrainImages/Predictions', main_preds))
@@ -342,6 +345,7 @@ def train_segmentation_model(create_model_fn,
 
         # HACK to see memory usage.
         # TODO: Clean up, pretty messy.
+        # import pdb; pdb.set_trace()
         def train_step_mem(sess, train_op, global_step, train_step_kwargs):
             start_time = time.time()
             if log_memory:
@@ -395,6 +399,6 @@ def train_segmentation_model(create_model_fn,
             startup_delay_steps=startup_delay_steps,
             init_fn=init_fn,
             summary_op=summary_op,
-            save_summaries_secs=120,
+            save_summaries_secs=60,
             save_interval_secs=save_interval_secs,
             saver=saver)

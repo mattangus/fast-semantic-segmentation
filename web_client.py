@@ -7,16 +7,28 @@ import pickle
 import tqdm
 from enum import Enum
 import time
+import tensorflow as tf
 
 from experiment_mgr.experiment import Experiment, Result
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--host", type=str, required=True)
-parser.add_argument("--port", type=int, default=5000)
-parser.add_argument("gpus", nargs='+', type=str)
-parser.add_argument("--debug", action='store_true')
+flags = tf.app.flags
 
-args = parser.parse_args()
+flags.DEFINE_integer('port', 5000,'')
+flags.DEFINE_string('host', None,'')
+
+flags.DEFINE_list('gpus', ['0'],'')
+
+flags.DEFINE_boolean('debug', False,'')
+
+# parser = argparse.ArgumentParser()
+# parser.add_argument("--host", type=str, required=True)
+# parser.add_argument("--port", type=int, default=5000)
+# parser.add_argument("gpus", nargs='+', type=str)
+# parser.add_argument("--debug", action='store_true')
+
+# args = parser.parse_args()
+
+args = flags.FLAGS
 
 try:
     for gpu in args.gpus:
@@ -75,7 +87,7 @@ def runner_thread(gpu_queue, exp_queue, res_queue, is_debug):
         if exp is None:
             return
         gpus = gpu_queue.get()
-        print("launching", exp.model_config, "-", exp.data_config, "-", exp.kwargs, "gpu", gpus)
+        print("launching", exp.model_config, "-", exp.data_config, "-", exp.kwargs, "-", exp.processor_type, "-", "gpu", gpus)
         buff, result, had_error = experiment_runner.run_experiment(gpus, exp.model_config, exp.data_config,
                         exp.trained_checkpoint, exp.pad_to_shape,
                         exp.processor_type, exp.annot_type, is_debug, **exp.kwargs)

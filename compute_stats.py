@@ -25,6 +25,7 @@ from libs.constants import CITYSCAPES_LABEL_COLORS, CITYSCAPES_LABEL_IDS
 from libs.custom_metric import streaming_mean
 from submod.cholesky.cholesky_update import cholesky_update
 from libs import stat_computer as stats
+from protos.config_reader import read_config
 
 slim = tf.contrib.slim
 
@@ -48,9 +49,16 @@ flags.DEFINE_string('pad_to_shape', '1025,2049', # default Cityscapes values
                      'Pad the input image to the specified shape. Must have '
                      'the shape specified as [height, width].')
 
-flags.DEFINE_string('config_path', None,
-                    'Path to a pipeline_pb2.TrainEvalPipelineConfig config '
-                    'file.')
+flags.DEFINE_string('model_config', None,
+                    'Path to a pipeline_pb2.TrainEvalConfig config '
+                    'file. If provided, other configs are ignored')
+flags.mark_flag_as_required('model_config')
+
+flags.DEFINE_string('data_config', None,
+                    'Path to a pipeline_pb2.TrainEvalConfig config '
+                    'file. If provided, other configs are ignored')
+flags.mark_flag_as_required('data_config')
+
 
 flags.DEFINE_string('trained_checkpoint', None,
                     'Path to trained checkpoint, typically of the form '
@@ -73,30 +81,49 @@ flags.DEFINE_boolean('use_dtform', False,
 flags.DEFINE_integer("max_iters", 1000000000, "limit the number of iterations for large datasets")
 
 epoch = 1
-
-def create_input(tensor_dict,
-                batch_size,
-                batch_queue_capacity,
-                batch_queue_threads,
-                prefetch_queue_capacity):
-
+def create_input(dataset,
+                          batch_size):
+    
     def cast_and_reshape(tensor_dict, dicy_key):
         items = tensor_dict[dicy_key]
         float_images = tf.to_float(items)
         tensor_dict[dicy_key] = float_images
         return tensor_dict
 
-    tensor_dict = cast_and_reshape(tensor_dict,
-                    dataset_builder._IMAGE_FIELD)
+    dataset = dataset.map(lambda x: cast_and_reshape(x,
+                                    dataset_builder._IMAGE_FIELD))
 
-    batched_tensors = tf.train.batch(tensor_dict,
-        batch_size=batch_size, num_threads=batch_queue_threads,
-        capacity=batch_queue_capacity, dynamic_pad=True,
-        allow_smaller_final_batch=False)
+    dataset = dataset.prefetch(batch_size)
 
-    return prefetch_queue.prefetch_queue(batched_tensors,
-        capacity=prefetch_queue_capacity,
-        dynamic_pad=False)
+    dataset = dataset.batch(batch_size, drop_remainder=True)
+    #dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(batch_size))
+
+    return dataset
+
+# def create_input(tensor_dict,
+#                 batch_size,
+#                 batch_queue_capacity,
+#                 batch_queue_threads,
+#                 prefetch_queue_capacity):
+
+#     def cast_and_reshape(tensor_dict, dicy_key):
+#         import pdb; pdb.set_trace()
+#         items = tensor_dict[dicy_key]
+#         float_images = tf.to_float(items)
+#         tensor_dict[dicy_key] = float_images
+#         return tensor_dict
+
+#     tensor_dict = cast_and_reshape(tensor_dict,
+#                     dataset_builder._IMAGE_FIELD)
+
+#     batched_tensors = tf.train.batch(tensor_dict,
+#         batch_size=batch_size, num_threads=batch_queue_threads,
+#         capacity=batch_queue_capacity, dynamic_pad=True,
+#         allow_smaller_final_batch=False)
+
+#     return prefetch_queue.prefetch_queue(batched_tensors,
+#         capacity=prefetch_queue_capacity,
+#         dynamic_pad=False)
 
 def dist_transform(annot):
     lr = tf.not_equal(annot[:,1:,1:] - annot[:,:-1,1:],0)
@@ -133,13 +160,16 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     assert len(input_shape) == 3, "input shape must be rank 3"
     effective_shape = [None] + input_shape
 
+    batch = 1
     if isinstance(model._feature_extractor, resnet_ex_class):
         batch = 2
     elif isinstance(model._feature_extractor, mobilenet_ex_class):
         batch = 1
 
-    input_queue = create_input(input_dict, batch, 15, 15, 15)
-    input_dict = input_queue.dequeue()
+    dataset = create_input(input_dict, batch)
+    dataset = dataset.apply(tf.data.experimental.ignore_errors())
+    data_iterator = dataset.make_one_shot_iterator()
+    input_dict = data_iterator.get_next()
 
     input_tensor = input_dict[dataset_builder._IMAGE_FIELD]
     annot_tensor = input_dict[dataset_builder._LABEL_FIELD]
@@ -174,8 +204,12 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         avg_mask, sorted_feats = process_annot(annot_tensor, final_logits, num_classes)
 
         # if os.path.exists(mean_file) and os.path.exists(class_mean_file):
+        feed_dict = {}
         if os.path.exists(class_mean_file):
             class_mean_v = np.load(class_mean_file)["arr_0"]
+
+            # class_mean_pl = tf.placeholder(tf.float32, class_mean_v.shape)
+            # feed_dict[class_mean_pl] = class_mean_v
             first_pass = False
             if FLAGS.use_patch:
                 comp = stats.PatchCovComputer
@@ -214,7 +248,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         for idx in range(num_step):
             start_time = timeit.default_timer()
 
-            sess.run(update_op)
+            sess.run(update_op, feed_dict=feed_dict)
 
             elapsed = timeit.default_timer() - start_time
             end = "\r"
@@ -236,9 +270,7 @@ def main(_):
 
     output_directory = FLAGS.output_dir
     tf.gfile.MakeDirs(output_directory)
-    pipeline_config = pipeline_pb2.PipelineConfig()
-    with tf.gfile.GFile(FLAGS.config_path, 'r') as f:
-        text_format.Merge(f.read(), pipeline_config)
+    pipeline_config = read_config(FLAGS.model_config, FLAGS.data_config)
 
     pad_to_shape = None
     if FLAGS.input_shape:
@@ -261,16 +293,18 @@ def main(_):
     label_map = (CITYSCAPES_LABEL_IDS
         if FLAGS.label_ids else CITYSCAPES_LABEL_COLORS)
 
+    ignore_label = pipeline_config.input_reader.ignore_label
+
     num_classes, segmentation_model = model_builder.build(
-        pipeline_config.model, is_training=False)
+        pipeline_config.model, ignore_label=ignore_label, is_training=False)
 
     #input_reader = pipeline_config.eval_input_reader
-    input_reader = pipeline_config.train_input_reader
+    input_reader = pipeline_config.input_reader
     input_reader.shuffle = False
-    input_reader.num_epochs = epoch
-    input_dict = dataset_builder.build(input_reader)
+    input_dict = dataset_builder.build(input_reader, epoch)
 
-    iters = min(input_reader.num_examples, FLAGS.max_iters)
+    num_examples = sum([r.num_examples for r in input_reader.tf_record_input_reader])
+    iters = min(num_examples, FLAGS.max_iters)
 
     run_inference_graph(segmentation_model, FLAGS.trained_checkpoint,
                         input_dict, iters, input_shape, pad_to_shape,

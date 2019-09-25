@@ -5,6 +5,7 @@ from protos import model_pb2
 from extractors import pspnet_icnet_resnet_v1
 from extractors import pspnet_icnet_mobilenet_v2
 from architectures import pspnet_architecture
+from architectures import deeplab_architecture
 from architectures import icnet_architecture
 
 
@@ -110,6 +111,31 @@ def _build_pspnet_icnet_model(model_config, is_training, add_summaries,
     return model
 
 
+def _build_deeplab_model(model_config, is_training, add_summaries, ignore_class):
+    num_classes = model_config.num_classes
+    if not num_classes:
+        raise ValueError('"num_classes" must be greater than 0.')
+
+    loss_config = model_config.loss
+    classification_loss = losses_builder.build(loss_config, ignore_class)
+    scale_predictions = model_config.scale_predictions #model_config.something
+
+    common_kwargs = {
+        'is_training': is_training,
+        'num_classes': num_classes,
+        'classification_loss': classification_loss,
+        'add_summaries': add_summaries,
+        'scale_pred': scale_predictions,
+        'main_loss_weight': 1.0,
+        'train_reduce': model_config.train_reduce,
+        'feature_extractor': model_config.feature_extractor.type,
+    }
+    model =  deeplab_architecture.DeeplabArchitecture(
+        **common_kwargs)
+    return num_classes, model
+    
+
+
 def build(model_config, is_training, ignore_label, add_summaries=True):
     if not isinstance(model_config, model_pb2.SegmentationModel):
         raise ValueError('model_config not of type '
@@ -123,6 +149,10 @@ def build(model_config, is_training, ignore_label, add_summaries=True):
     elif model == 'icnet':
         return _build_pspnet_icnet_model(
             model_config.icnet, is_training, add_summaries,
+            ignore_label)
+    elif model == "deeplab":
+        return _build_deeplab_model(
+            model_config.deeplab, is_training, add_summaries,
             ignore_label)
 
     raise ValueError('Unknown model: {}'.format(model))

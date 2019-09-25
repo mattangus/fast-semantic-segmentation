@@ -1,0 +1,20 @@
+syntax = "proto2";
+
+package fast_semantic_segmentation.protos;
+import "protos/hyperparams.proto";
+import "protos/losses.proto";
+
+message DeepLab {
+    optional int32 num_classes = 1;
+    optional DeeplabFeatureExtractor feature_extractor = 2;
+    optional Hyperparams hyperparams = 3;
+    optional Loss loss = 4;
+    // The filter compression factor when applying filter/channel pruning
+    optional bool scale_predictions = 5;
+    optional bool train_reduce = 7;
+}
+
+message DeeplabFeatureExtractor {
+    optional string type = 1;
+    optional float depth_multiplier = 2;
+}

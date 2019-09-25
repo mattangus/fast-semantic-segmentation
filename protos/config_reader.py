@@ -15,3 +15,10 @@ def read_config(model_config_file, data_config_file):
     pipeline_config.input_reader.CopyFrom(input_reader)
 
     return pipeline_config
+
+def read_data_config(data_config_file):
+    input_reader = input_reader_pb2.InputReader()
+    with tf.gfile.GFile(data_config_file, 'r') as f:
+        text_format.Merge(f.read(), input_reader)
+    
+    return input_reader

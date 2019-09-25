@@ -10,6 +10,7 @@ from PIL import Image
 import tensorflow as tf
 from google.protobuf import text_format
 
+from protos.config_reader import read_config
 from protos import pipeline_pb2
 from builders import model_builder
 from libs.exporter import deploy_segmentation_inference_graph
@@ -25,16 +26,15 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string('input_path', None,
                     'Path to an image or a directory of images.')
 
-flags.DEFINE_string('input_shape', '1024,2048,3', # default Cityscapes values
-                    'The shape to use for inference. This should '
-                    'be in the form [height, width, channels]. A batch '
-                    'dimension is not supported for this test script.')
-
 flags.DEFINE_string('pad_to_shape', '1025,2049', # default Cityscapes values
                      'Pad the input image to the specified shape. Must have '
                      'the shape specified as [height, width].')
 
-flags.DEFINE_string('config_path', None,
+flags.DEFINE_string('data_config', None,
+                    'Path to a pipeline_pb2.TrainEvalPipelineConfig config '
+                    'file.')
+
+flags.DEFINE_string('model_config', None,
                     'Path to a pipeline_pb2.TrainEvalPipelineConfig config '
                     'file.')
 
@@ -72,12 +72,11 @@ def _get_images_from_path(input_path):
 
 
 def run_inference_graph(model, trained_checkpoint_prefix,
-                        input_images, input_shape, pad_to_shape,
+                        input_images, pad_to_shape,
                         label_color_map, output_directory):
-
     outputs, placeholder_tensor = deploy_segmentation_inference_graph(
         model=model,
-        input_shape=input_shape,
+        input_shape=[None,None,3],
         pad_to_shape=pad_to_shape,
         label_color_map=label_color_map)
     pred_tensor = outputs[model.main_class_predictions_key]
@@ -109,32 +108,17 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 def main(_):
     output_directory = FLAGS.output_dir
     tf.gfile.MakeDirs(output_directory)
-    pipeline_config = pipeline_pb2.PipelineConfig()
-    with tf.gfile.GFile(FLAGS.config_path, 'r') as f:
-        text_format.Merge(f.read(), pipeline_config)
-
-    pad_to_shape = None
-    if FLAGS.input_shape:
-        input_shape = [
-            int(dim) if dim != '-1' else None
-                for dim in FLAGS.input_shape.split(',')]
-    else:
-        raise ValueError('Must supply `input_shape`')
-
-    if FLAGS.pad_to_shape:
-        pad_to_shape = [
-            int(dim) if dim != '-1' else None
-                for dim in FLAGS.pad_to_shape.split(',')]
+    pipeline_config = read_config(FLAGS.model_config, FLAGS.data_config)
 
     input_images = _get_images_from_path(FLAGS.input_path)
     label_map = (CITYSCAPES_LABEL_IDS
         if FLAGS.label_ids else CITYSCAPES_LABEL_COLORS)
 
     num_classes, segmentation_model = model_builder.build(
-        pipeline_config.model, is_training=False)
+        pipeline_config.model, is_training=False, ignore_label=None)
 
     run_inference_graph(segmentation_model, FLAGS.trained_checkpoint,
-                        input_images, input_shape, pad_to_shape,
+                        input_images, pad_to_shape,
                         label_map, output_directory)
 
 if __name__ == '__main__':

@@ -21,6 +21,7 @@ from post_process.max_softmax import MaxSoftmaxProcessor
 from post_process.droput import DropoutProcessor
 from post_process.confidence import ConfidenceProcessor
 from post_process.entropy import EntropyProcessor
+from post_process.alent import AlEntProcessor
 from protos.config_reader import read_config
 from libs.exporter import deploy_segmentation_inference_graph, _map_to_colored_labels
 from libs.constants import OOD_LABEL_COLORS
@@ -44,7 +45,8 @@ processor_dict = {
     "ODIN": MaxSoftmaxProcessor,
     "Dropout": DropoutProcessor,
     "Confidence": ConfidenceProcessor,
-    "Entropy": EntropyProcessor
+    "Entropy": EntropyProcessor,
+    "AlEnt": AlEntProcessor
 }
 
 
@@ -85,7 +87,8 @@ def filter_ood(img, thresh=180, dilate=5, erode=5):
 
 def run_inference_graph(model, trained_checkpoint_prefix,
                         dataset, num_images, ignore_label, pad_to_shape,
-                        num_classes, processor_type, annot_type, num_gpu, **kwargs):
+                        num_classes, processor_type, annot_type, num_gpu,
+                        export_folder, **kwargs):
     batch = 1
 
     dataset = dataset.batch(batch, drop_remainder=True)
@@ -139,7 +142,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
     threshs = np.array(range(400))/(400-1)
     #######################################
 
-    moose_mask = cv2.imread("moose_mask.png")[...,0:1]
+    moose_mask = cv2.imread("imgs/moose_mask.png")[...,0:1]
 
     moose_mask = (moose_mask > 128).astype(np.uint8)
 
@@ -289,26 +292,26 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                 #{"mean_sub": processor.mean_sub,"img_dist": processor.img_dist,"bad_pixel": processor.bad_pixel,"var_inv_tile": processor.var_inv_tile,"left": processor.left}
                 out_annot = new_annot[0][..., ::-1].astype(np.uint8)
 
-                iou_i = np.argmax(iou)
-                fpr, tpr = roc[:,0], roc[:,1]
-                roc_i = np.argmax(tpr + 1 - fpr)
-                iou_t = threshs[iou_i]
-                roc_t = threshs[roc_i]
+                # iou_i = np.argmax(iou)
+                # fpr, tpr = roc[:,0], roc[:,1]
+                # roc_i = np.argmax(tpr + 1 - fpr)
+                # iou_t = threshs[iou_i]
+                # roc_t = threshs[roc_i]
 
-                # roc_select = ((output_image[0,...,0]) > roc_t).astype(np.uint8)*255
-                # iou_select = ((output_image[0,...,0]) > iou_t).astype(np.uint8)*255
+                # # roc_select = ((output_image[0,...,0]) > roc_t).astype(np.uint8)*255
+                # # iou_select = ((output_image[0,...,0]) > iou_t).astype(np.uint8)*255
 
-                overlay = cv2.addWeighted(out_pred, 0.5, out_img, 0.5, 0)
+                # overlay = cv2.addWeighted(out_pred, 0.5, out_img, 0.5, 0)
 
-                cv2.imshow("image", cv2.resize(out_img, (0,0), fx=0.9, fy=0.9))
-                cv2.imshow("uncertainty", cv2.resize(out_map, (0,0), fx=0.9, fy=0.9))
-                cv2.imshow("annot", cv2.resize(out_annot, (0,0), fx=0.9, fy=0.9))
-                cv2.imshow("prediction", cv2.resize(overlay, (0,0), fx=0.9, fy=0.9))
+                # cv2.imshow("image", cv2.resize(out_img, (0,0), fx=0.9, fy=0.9))
+                # cv2.imshow("uncertainty", cv2.resize(out_map, (0,0), fx=0.9, fy=0.9))
+                # cv2.imshow("annot", cv2.resize(out_annot, (0,0), fx=0.9, fy=0.9))
+                # cv2.imshow("prediction", cv2.resize(overlay, (0,0), fx=0.9, fy=0.9))
 
-                print(cur_path)
+                print(save_name)
 
                 def do_save():
-                    save_folder = "full_export/" + processor.name
+                    save_folder = os.path.join(export_folder, processor.name)
                     img_save_path = os.path.join(save_folder, "image")
                     map_save_path = os.path.join(save_folder, "map")
                     pred_save_path = os.path.join(save_folder, "pred")
@@ -319,31 +322,33 @@ def run_inference_graph(model, trained_checkpoint_prefix,
                     # for f in [img_save_path, map_save_path, pred_save_path, annot_save_path, roc_save_path, iou_save_path]:
                     for f in [img_save_path, map_save_path, pred_save_path, annot_save_path]:
                         os.makedirs(os.path.join(f, os.path.dirname(save_name)), exist_ok=True)
-                    cv2.imwrite(os.path.join(img_save_path, save_name), out_img)
-                    cv2.imwrite(os.path.join(map_save_path, save_name.replace(".png", ".exr")), out_map)
-                    cv2.imwrite(os.path.join(pred_save_path, save_name), out_pred)
-                    cv2.imwrite(os.path.join(annot_save_path, save_name), out_annot)
+                    s1 = cv2.imwrite(os.path.join(img_save_path, save_name), out_img)
+                    s2 = cv2.imwrite(os.path.join(map_save_path, save_name.replace(".png", ".exr")), out_map)
+                    s3 = cv2.imwrite(os.path.join(pred_save_path, save_name), out_pred)
+                    s4 = cv2.imwrite(os.path.join(annot_save_path, save_name), out_annot)
+                    if not (s1 and s2 and s3 and s4):
+                        import pdb; pdb.set_trace()
                     # cv2.imwrite(os.path.join(roc_save_path, save_name), roc_select)
                     # cv2.imwrite(os.path.join(iou_save_path, save_name), iou_select)
 
-                # do_save()
-                if previous_export:
-                    do_save()
-                    #previous_export_set.remove(save_name)
-                    if len(previous_export_set) == 0:
-                        break
-                else: #let us decide
-                    while True:
-                        key = cv2.waitKey()
-                        if key == 27: #escape
-                            return
-                        elif key == 32: #space
-                            break
-                        elif key == 115: #s
-                            do_save()
-                            print("saved!")
-                        elif key == 98: #b
-                            import pdb; pdb.set_trace()
+                do_save()
+                # if previous_export:
+                #     do_save()
+                #     #previous_export_set.remove(save_name)
+                #     if len(previous_export_set) == 0:
+                #         break
+                # else: #let us decide
+                #     while True:
+                #         key = cv2.waitKey()
+                #         if key == 27: #escape
+                #             return
+                #         elif key == 32: #space
+                #             break
+                #         elif key == 115: #s
+                #             do_save()
+                #             print("saved!")
+                #         elif key == 98: #b
+                #             import pdb; pdb.set_trace()
 
         # print()
         # csv_file_name = "category_score/" + processor.name + ".csv"
@@ -356,7 +361,7 @@ def run_inference_graph(model, trained_checkpoint_prefix,
         #             csv.write(str(np.mean(category_results[c][metric_name])) + ",")
         #         csv.write(str(len(category_results[c]["auroc"])) + "\n")
 
-        meta = "full_export/" + processor.name + "/meta.csv"
+        meta = os.path.join(export_folder, processor.name, "meta.csv")
         with open(meta, "w") as f:
             f.write("path,auroc,aupr,max_iou,fpr_at_tpr,detection_error\n")
             f.write("\n".join([",".join(map(str, l)) for l in all_results]))
@@ -369,7 +374,8 @@ def run_inference_graph(model, trained_checkpoint_prefix,
 
 def extract_images(gpus, model_config, data_config,
                     trained_checkpoint, pad_to_shape,
-                    processor_type, annot_type, is_debug, **kwargs):
+                    processor_type, annot_type, is_debug,
+                    export_folder, **kwargs):
 
     os.environ["CUDA_VISIBLE_DEVICES"] = gpus
 
@@ -382,6 +388,9 @@ def extract_images(gpus, model_config, data_config,
 
     input_reader = pipeline_config.input_reader
     input_reader.shuffle = False
+    if len(input_reader.tf_record_input_reader) > 1:
+        input_reader.tf_record_input_reader.pop()
+        print("REMOVED INPUT READER:\n", input_reader)
     ignore_label = input_reader.ignore_label
 
     num_classes, segmentation_model = model_builder.build(
@@ -395,5 +404,6 @@ def extract_images(gpus, model_config, data_config,
 
     run_inference_graph(segmentation_model, trained_checkpoint, dataset,
                         num_examples, ignore_label, pad_to_shape,
-                        num_classes, processor_type, annot_type, num_gpu, **kwargs)
+                        num_classes, processor_type, annot_type, num_gpu,
+                        export_folder, **kwargs)
 

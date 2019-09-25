@@ -32,6 +32,8 @@ tf.flags.DEFINE_string('aspect', None, 'Aspect ratio to filter by.')
 
 tf.flags.DEFINE_integer("label_value", None, "value to pass as label")
 
+tf.flags.DEFINE_integer("max_items", None, "value to pass as label")
+
 tf.flags.DEFINE_list('resize', None, 'w,h to resize to')
 
 tf.flags.DEFINE_bool("shuffle", True, "shuffle list")
@@ -127,6 +129,8 @@ def create_tf_example(image_path, label_path, image_dir='', is_jpeg=False, targe
 def _create_tf_record(images, labels, output_path, target_aspect=None):
     options = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.GZIP)
     writer = tf.python_io.TFRecordWriter(output_path, options=options)
+    if FLAGS.max_items:
+        images, labels = zip(*random.sample(list(zip(images, labels)), FLAGS.max_items))
     if FLAGS.shuffle:
         images, labels = zip(*random.sample(list(zip(images, labels)), len(images)))
 

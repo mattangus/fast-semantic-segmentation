@@ -2,6 +2,17 @@ from experiment_mgr import db
 import peewee as pw
 from pydoc import locate
 
+def get_config(model_config, data_config, trained_checkpoint, pad_to_shape, processor_type, annot_type):
+    configs = list(db.ExperimentConfig
+           .select()
+           .where((db.ExperimentConfig.model_config == model_config) &
+                  (db.ExperimentConfig.data_config == data_config) &
+                  (db.ExperimentConfig.trained_checkpoint == trained_checkpoint) &
+                  (db.ExperimentConfig.pad_to_shape == pad_to_shape) &
+                  (db.ExperimentConfig.processor_type == processor_type) &
+                  (db.ExperimentConfig.annot_type == annot_type)))
+    return configs
+
 def create_config(run_args):
     configs = list(db.ExperimentConfig
            .select()
@@ -141,7 +152,8 @@ def get_top_from_config(config, exclude_fn=None):
     results = list(
         db.Result.select()
         .join(db.Experiment)
-        .where(db.Experiment.config == config)
+        .where((db.Experiment.config == config) &
+                (db.Result.had_error == False))
     )
 
     if exclude_fn is not None:
