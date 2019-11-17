@@ -253,7 +253,8 @@ class FigMaker(object):
         pred = get_image(self.all_files[f_name]["pred"]["MaxSoftmax"])
         # map_order = ["Entropy"]
         map_order = ["MaxSoftmax", "ODIN", "Mahal", "Confidence", "Dropout", "Entropy", "AlEnt"]
-        map_order = ["Entropy"]
+        map_order = ["MaxSoftmax", "ODIN",  "Confidence", "Dropout", "Entropy", "AlEnt"]
+        # map_order = ["Entropy"]
         maps = [get_image(self.all_files[f_name]["map"][v], cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH) for v in map_order]
         #import pdb; pdb.set_trace()
         maps = [m - m.min() for m in maps]

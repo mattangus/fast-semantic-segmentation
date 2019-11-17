@@ -88,7 +88,7 @@ elif mode == odin:
     pad_to_shape = "1025,2049"
     processor_type = "ODIN"
     annot_type = "ood"
-    kwargs = {"epsilon": 0.00002, "t_value": 10}
+    kwargs = {"epsilon": 0.0, "t_value": 10}
 
     er.run_experiment(gpus, model_config, data_config,
                         trained_checkpoint, pad_to_shape,
